@@ -1,0 +1,22 @@
+# Restos de instalador / navegador (no versionar en este repo de app)
+Zen Browser/
+
+# Base de datos local (se genera al ejecutar la app)
+data/*.db
+*.db-journal
+
+# Fotos de productos subidas por el usuario (solo se mantiene .gitkeep)
+data/product_images/*
+!data/product_images/.gitkeep
+
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
