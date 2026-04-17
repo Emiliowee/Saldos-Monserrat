@@ -1,0 +1,13 @@
+{
+  "name": "bazar-monserrat",
+  "private": true,
+  "description": "Metapaquete: delega scripts a bazar-app/",
+  "scripts": {
+    "postinstall": "node scripts/postinstall-install-app.cjs",
+    "dev": "npm run dev --prefix bazar-app",
+    "start": "npm run dev --prefix bazar-app",
+    "build": "npm run build --prefix bazar-app",
+    "build:vite": "npm run build:vite --prefix bazar-app",
+    "lint": "npm run lint --prefix bazar-app"
+  }
+}

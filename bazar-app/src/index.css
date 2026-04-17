@@ -1,0 +1,278 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ── Bazar Monserrat — identidad visual ----------------------------------- *
+ * Papel cálido + coral sakura + lavanda: bazar editorial, no plantilla.   */
+
+:root {
+  --radius: 0.625rem;
+
+  /* Brand — coral sakura (firme, reconocible) */
+  --primary: oklch(0.68 0.14 18);
+  --primary-foreground: oklch(0.99 0.002 0);
+
+  /* Lienzo — papel rosado-lavanda (personalidad sin gritar) */
+  --background: oklch(0.978 0.012 320);
+  --foreground: oklch(0.21 0.02 285);
+  --card: oklch(0.995 0.006 320);
+  --card-foreground: oklch(0.21 0.02 285);
+  --popover: oklch(0.995 0.006 320);
+  --popover-foreground: oklch(0.21 0.02 285);
+
+  --secondary: oklch(0.94 0.028 310);
+  --secondary-foreground: oklch(0.24 0.03 285);
+  --muted: oklch(0.94 0.022 310);
+  --muted-foreground: oklch(0.44 0.03 285);
+  --accent: oklch(0.94 0.04 15);
+  --accent-foreground: oklch(0.24 0.03 285);
+
+  --destructive: oklch(0.54 0.19 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.58 0.14 155);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.76 0.12 78);
+  --warning-foreground: oklch(0.22 0.03 285);
+
+  --border: oklch(0.88 0.02 300);
+  --input: oklch(0.88 0.02 300);
+  --ring: oklch(0.68 0.14 18);
+
+  --chart-1: oklch(0.68 0.14 18);
+  --chart-2: oklch(0.58 0.11 185);
+  --chart-3: oklch(0.64 0.12 75);
+  --chart-4: oklch(0.56 0.12 285);
+  --chart-5: oklch(0.60 0.10 145);
+
+  /* Sidebar — un tono más “vitrina” que el lienzo */
+  --sidebar: oklch(0.972 0.014 315);
+  --sidebar-foreground: oklch(0.24 0.025 285);
+  --sidebar-primary: oklch(0.68 0.14 18);
+  --sidebar-primary-foreground: oklch(0.99 0.002 0);
+  --sidebar-accent: oklch(0.93 0.035 12);
+  --sidebar-accent-foreground: oklch(0.26 0.04 285);
+  --sidebar-border: oklch(0.88 0.025 300);
+  --sidebar-ring: oklch(0.68 0.14 18);
+  --sidebar-muted-foreground: oklch(0.48 0.03 285);
+}
+
+.dark,
+[data-theme="dark"] {
+  --primary: oklch(0.74 0.12 18);
+  --primary-foreground: oklch(0.12 0.02 285);
+
+  --background: oklch(0.19 0.022 285);
+  --foreground: oklch(0.93 0.02 300);
+  --card: oklch(0.22 0.024 285);
+  --card-foreground: oklch(0.93 0.02 300);
+  --popover: oklch(0.22 0.024 285);
+  --popover-foreground: oklch(0.93 0.02 300);
+
+  --secondary: oklch(0.28 0.03 285);
+  --secondary-foreground: oklch(0.93 0.02 300);
+  --muted: oklch(0.28 0.03 285);
+  --muted-foreground: oklch(0.62 0.04 300);
+  --accent: oklch(0.30 0.05 18);
+  --accent-foreground: oklch(0.95 0.02 300);
+
+  --destructive: oklch(0.58 0.17 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.64 0.13 155);
+  --success-foreground: oklch(0.12 0.02 285);
+  --warning: oklch(0.74 0.11 78);
+  --warning-foreground: oklch(0.15 0.02 285);
+
+  --border: oklch(0.32 0.03 285);
+  --input: oklch(0.32 0.03 285);
+  --ring: oklch(0.74 0.12 18);
+
+  --chart-1: oklch(0.74 0.12 18);
+  --chart-2: oklch(0.64 0.10 185);
+  --chart-3: oklch(0.70 0.11 75);
+  --chart-4: oklch(0.60 0.12 285);
+  --chart-5: oklch(0.64 0.10 145);
+
+  --sidebar: oklch(0.17 0.025 285);
+  --sidebar-foreground: oklch(0.91 0.02 300);
+  --sidebar-primary: oklch(0.74 0.12 18);
+  --sidebar-primary-foreground: oklch(0.12 0.02 285);
+  --sidebar-accent: oklch(0.26 0.04 18);
+  --sidebar-accent-foreground: oklch(0.93 0.02 300);
+  --sidebar-border: oklch(0.30 0.03 285);
+  --sidebar-ring: oklch(0.74 0.12 18);
+  --sidebar-muted-foreground: oklch(0.56 0.04 300);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+@custom-variant dark (&:is(.dark *, [data-theme="dark"] *));
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply text-foreground;
+    font-family: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--background);
+  }
+}
+
+/* Marca tipográfica opcional */
+.bazar-wordmark-coral {
+  color: var(--primary);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+
+/* ── Global scrollbar — thin, disappearing ────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.65 0.06 18 / 0.22);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.55 0.08 18 / 0.38);
+}
+
+/* Sidebar: hide scrollbar until hover */
+[data-sidebar="content"] {
+  scrollbar-width: none;
+}
+[data-sidebar="content"]:hover {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sidebar-border) transparent;
+}
+[data-sidebar="content"]::-webkit-scrollbar {
+  width: 4px;
+}
+[data-sidebar="content"]::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 99px;
+}
+[data-sidebar="content"]:hover::-webkit-scrollbar-thumb {
+  background: oklch(0.62 0.06 18 / 0.2);
+}
+
+/* ── Selection ────────────────────────────────────────────────────────── */
+::selection {
+  background: oklch(0.68 0.14 18 / 0.22);
+}
+
+/* Área central (todos los módulos): scrollbars #FAFAFA — track y thumb */
+[data-app-workspace]::-webkit-scrollbar,
+[data-app-workspace] *::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+[data-app-workspace]::-webkit-scrollbar-track,
+[data-app-workspace] *::-webkit-scrollbar-track {
+  background: #fafafa;
+}
+[data-app-workspace]::-webkit-scrollbar-thumb,
+[data-app-workspace] *::-webkit-scrollbar-thumb {
+  background: #fafafa;
+  border-radius: 6px;
+}
+[data-app-workspace]::-webkit-scrollbar-thumb:hover,
+[data-app-workspace] *::-webkit-scrollbar-thumb:hover {
+  background: #f0f0f0;
+}
+@supports (scrollbar-color: auto) {
+  [data-app-workspace] * {
+    scrollbar-color: #fafafa #fafafa;
+    scrollbar-width: thin;
+  }
+}
+
+.dark [data-app-workspace]::-webkit-scrollbar-track,
+.dark [data-app-workspace] *::-webkit-scrollbar-track {
+  background: #27272a;
+}
+.dark [data-app-workspace]::-webkit-scrollbar-thumb,
+.dark [data-app-workspace] *::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
+.dark [data-app-workspace]::-webkit-scrollbar-thumb:hover,
+.dark [data-app-workspace] *::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+@supports (scrollbar-color: auto) {
+  .dark [data-app-workspace] * {
+    scrollbar-color: #3f3f46 #27272a;
+  }
+}
+
+/* ── App section — consistent padding for all views ──────────────────── */
+.app-section {
+  @apply px-6 py-5;
+}
+
+/* ── Embed windows (devices, rive, pdv-terminal) ─────────────────────── */
+#root:has(.embed-shell) {
+  height: 100vh;
+}

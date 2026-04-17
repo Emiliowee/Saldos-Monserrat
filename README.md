@@ -1,35 +1,92 @@
-# Bazar Monserrat / Saldos Monserrat
+# Bazar Monserrat
 
-Aplicación de escritorio (**PySide6** + SQLite).
+Aplicación de escritorio (**Electron + React + Vite + SQLite**) para inventario, cuaderno de precios, banqueta, créditos e impresión de etiquetas.
 
-## Clonar el repositorio
+## Requisitos (quien clone el repo)
+
+| Herramienta | Notas |
+|-------------|--------|
+| **Node.js 20 LTS** (o 22) | [nodejs.org](https://nodejs.org/). El proyecto declara `engines` en `bazar-app/package.json`. |
+| **npm** | Viene con Node. |
+| **Windows** | Para compilar `better-sqlite3`, suele hacer falta **Visual Studio Build Tools** (carga “Desarrollo con C++”) o un Visual Studio con componente MSVC. Sin eso, `npm install` puede fallar en el paso nativo. Si ves **EPERM / unlink** en `better_sqlite3.node`, cerrá la app Electron y cualquier `npm run dev` que esté usando esa carpeta y volvé a ejecutar `npm install` en `bazar-app/`. |
+| **macOS / Linux** | Xcode Command Line Tools / `build-essential` según corresponda. |
+
+No hace falta instalar Python ni dependencias del monorepo antiguo: todo va por **npm** dentro de `bazar-app/`.
+
+## Instalación en un solo paso
+
+**Opción A — desde la raíz del repo** (recomendado al clonar):
 
 ```bash
-git clone https://github.com/Emiliowee/Saldos-Monserrat.git
-cd Saldos-Monserrat
-pip install -r requirements.txt
-python main.py
+npm install
 ```
 
-Recursos gráficos (logo, iconos) están en `assets/`. La base de datos local `data/monserrat.db` **no** se versiona.
+El `package.json` de la raíz ejecuta **`postinstall`** → `npm install` dentro de `bazar-app/`, que a su vez corre **`electron-rebuild`** para **better-sqlite3**.
 
-## Ejecutar (si ya clonaste e instalaste dependencias)
+**Opción B — solo la app:**
 
 ```bash
-python main.py
+cd bazar-app
+npm install
 ```
 
-La interfaz activa es el **shell Zen** (`src/ui/zen_desktop/`). El código del ERP clásico (ventana con selector de arranque, `src/ui/main_window.py`, etc.) **sigue en el repositorio** por si se reutilizan módulos, pero **ya no hay otro `main`**: el arranque oficial es `main.py` de la raíz.
+En ambos casos quedan instaladas las dependencias de frontend y Electron.
 
-En **Inventario** (F2): alta con tags, nombre, precio, imagen, código `MSR-…`; **etiqueta** con Code128 real; **referencia de precio** (tuerca: cuaderno vs patrones, autocompletado opcional, enlace a informe con tabla e imágenes).
+Opcional: copiá variables de entorno para prototipos de IA:
 
-- Si la base está **vacía** (primer arranque), se cargan ~168 artículos de demostración con **nombres legibles** y **precios por tipo × marca**.
-- Para **eliminar toda la base** y regenerar desde cero: `python main.py --reset-db` (también borra planos de banqueta).
+```bash
+copy .env.example .env
+# macOS/Linux: cp .env.example .env
+```
 
-Si tras actualizar el código no ves cambios en pantalla, cerrá la app, borrá `src/**/__pycache__` (o la carpeta `__pycache__` del proyecto) y volvé a ejecutar `python main.py` desde la **raíz del proyecto**.
+## Arranque en desarrollo
 
-## Documentación
+Desde la raíz:
 
-- Interfaz Zen: [`docs/zen_desktop/README.md`](docs/zen_desktop/README.md)
-- Dispositivos / impresoras de prueba: [`docs/zen_desktop/DISPOSITIVOS_PRUEBA.md`](docs/zen_desktop/DISPOSITIVOS_PRUEBA.md)
-- Cómo colaborar: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+```bash
+npm run dev
+```
+
+O desde `bazar-app/`:
+
+```bash
+cd bazar-app
+npm run dev
+```
+
+Se levanta **Vite** (puerto 5173) y la ventana **Electron** con la UI. La app espera APIs en `window.bazar` (solo en Electron).
+
+## Comandos útiles
+
+| Comando | Descripción |
+|---------|-------------|
+| `npm run dev` / `npm start` | Desarrollo (Vite + Electron) |
+| `npm run build:vite` | Solo build web → `dist/` |
+| `npm run build` | `vite build` + **electron-builder** → `release/` (instalador; no suele subirse a Git) |
+| `npm run lint` | ESLint |
+
+Más detalle: [`bazar-app/README.md`](bazar-app/README.md).
+
+## Estructura del repo
+
+```
+BazarMonserrrat/
+├── README.md          ← este archivo
+├── CONTRIBUTING.md
+└── bazar-app/         ← aplicación (package.json, electron/, src/)
+```
+
+## Subir a GitHub
+
+1. Creá el repositorio vacío en GitHub.
+2. En la carpeta del proyecto:
+
+```bash
+git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
+git add .
+git status   # revisá que no aparezcan node_modules/, dist/, release/
+git commit -m "feat: app Electron Bazar Monserrat"
+git push -u origin main
+```
+
+**Importante:** no commitees `node_modules/`, `dist/`, `release/` ni `.env`; ya están en `.gitignore`. Sí commiteá **`package-lock.json`** para que otro desarrollador obtenga las mismas versiones con `npm ci` o `npm install`.
