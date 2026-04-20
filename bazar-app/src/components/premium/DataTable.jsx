@@ -70,7 +70,7 @@ export function DataTableRow({ selected, active, onClick, onDoubleClick, childre
       className={cn(
         'group/row relative cursor-pointer transition-colors',
         '[&>td]:border-b [&>td]:border-border/45',
-        'hover:[&>td]:bg-[#faf9f8] dark:hover:[&>td]:bg-zinc-900/55',
+        'hover:[&>td]:bg-muted/45 dark:hover:[&>td]:bg-muted/40',
         selected && '[&>td]:bg-primary/[0.04] hover:[&>td]:bg-primary/[0.07]',
         active && !selected && '[&>td]:bg-muted/20',
         className,
@@ -86,7 +86,8 @@ export function DataTableCell({ children, className, align = 'left', mono = fals
     <td
       className={cn(
         'px-3 py-2 align-middle',
-        align === 'right' && 'text-right tabular-nums',
+        align === 'right' &&
+          'text-right tabular-nums [font-feature-settings:"tnum"]',
         align === 'center' && 'text-center',
         mono && 'font-mono text-[11.5px]',
         muted && 'text-muted-foreground/85',
@@ -108,7 +109,7 @@ export function RowActionStrip({ children, className }) {
       onClick={(e) => e.stopPropagation()}
       className={cn(
         'absolute right-2 top-1/2 -translate-y-1/2 hidden items-center gap-0.5 rounded-md border border-border/40 bg-background/95 p-0.5 shadow-[0_1px_0_hsl(0_0%_0%/0.04),0_4px_12px_hsl(0_0%_0%/0.06)] group-hover/row:flex motion-safe:group-hover/row:animate-in motion-safe:group-hover/row:fade-in',
-        'dark:bg-zinc-900/95',
+        'dark:bg-card/95',
         className,
       )}
     >
@@ -117,21 +118,24 @@ export function RowActionStrip({ children, className }) {
   )
 }
 
-export function RowActionButton({ icon, label, onClick, destructive = false }) {
+export function RowActionButton({ icon, label, onClick, destructive = false, disabled = false, title: titleProp }) {
+  const title = titleProp ?? label
   return (
     <button
       type="button"
-      title={label}
+      disabled={disabled}
+      title={title}
       aria-label={label}
       onClick={(e) => {
         e.stopPropagation()
-        onClick?.()
+        if (!disabled) onClick?.()
       }}
       className={cn(
         'inline-flex size-6 items-center justify-center rounded text-muted-foreground/80 transition-colors',
         destructive
           ? 'hover:bg-destructive/10 hover:text-destructive'
-          : 'hover:bg-[#f1f0ef] hover:text-foreground dark:hover:bg-zinc-800/70',
+          : 'hover:bg-muted/70 hover:text-foreground dark:hover:bg-muted/55',
+        disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground/80',
       )}
     >
       {icon}

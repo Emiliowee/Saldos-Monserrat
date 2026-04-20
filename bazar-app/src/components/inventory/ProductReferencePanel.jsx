@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { MoreHorizontal } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatPrice } from '@/lib/format'
 import { ReferenceDetailModal } from '@/components/inventory/ReferenceDetailModal.jsx'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
 const SETTINGS_DEFAULTS = {
@@ -26,9 +35,7 @@ export function ProductReferencePanel({ tagsByGroup, codigo, onApplyMedian, onPr
   const [snap, setSnap] = useState(null)
   const [resumenRows, setResumenRows] = useState([])
   const [prefs, setPrefs] = useState(() => ({ ...SETTINGS_DEFAULTS }))
-  const [menuOpen, setMenuOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
-  const menuRef = useRef(null)
 
   const nTags = tagsByGroup && typeof tagsByGroup === 'object' ? Object.keys(tagsByGroup).length : 0
 
@@ -40,14 +47,6 @@ export function ProductReferencePanel({ tagsByGroup, codigo, onApplyMedian, onPr
   useEffect(() => {
     loadPrefs()
   }, [loadPrefs])
-
-  useEffect(() => {
-    const onDoc = (e) => {
-      if (!menuRef.current?.contains(e.target)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
 
   const refresh = useCallback(async () => {
     if (!window.bazar?.db?.getReferenceSnapshot) {
@@ -97,17 +96,19 @@ export function ProductReferencePanel({ tagsByGroup, codigo, onApplyMedian, onPr
     }
   }, [tagsByGroup, codigo, nTags])
 
-  const persistPrefs = async (patch, { closeMenu = true } = {}) => {
+  const persistPrefs = async (patch) => {
     const api = window.bazar?.settings?.set
-    if (!api) return
+    if (!api) {
+      toast.error('No se pudo guardar la preferencia.')
+      return
+    }
     try {
       const next = await api(patch)
       setPrefs(mergeSettings(next))
       onPrefsSaved?.()
     } catch {
-      /* ignore */
+      toast.error('No se pudo guardar la preferencia.')
     }
-    if (closeMenu) setMenuOpen(false)
   }
 
   const patrones = snap?.patrones
@@ -131,7 +132,7 @@ export function ProductReferencePanel({ tagsByGroup, codigo, onApplyMedian, onPr
       return {
         variant: 'muted',
         title: 'Autollenado desactivado',
-        body: 'Activá patrones o cuaderno en el menú (⋯) para ver precio sugerido y autollenado al guardar tags.',
+        body: 'Elegí Patrones o Cuaderno arriba para ver precio sugerido y autollenado al guardar tags.',
       }
     }
     if (mode === 'cuaderno') {
@@ -206,104 +207,74 @@ export function ProductReferencePanel({ tagsByGroup, codigo, onApplyMedian, onPr
 
   return (
     <div className="rounded-xl border bg-card shadow-sm">
-      <div className="flex items-start justify-between gap-2 border-b px-3 py-2.5">
+      <div className="flex flex-col gap-2 border-b px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           <span className="block text-[12.5px] font-semibold">Referencia de precio</span>
-          <span className="mt-0.5 block text-[10.5px] text-muted-foreground">
-            Autollenado:{' '}
-            <strong className="font-medium text-foreground">
-              {mode === 'patrones' ? 'patrones' : mode === 'cuaderno' ? 'cuaderno' : 'off'}
-            </strong>
+          <span className="mt-1 block text-[10.5px] text-muted-foreground">
+            <span className="font-medium text-foreground/90">Modo de autollenado</span>
+            <span className="text-muted-foreground"> — precio sugerido al guardar tags</span>
           </span>
         </div>
-        <div className="relative shrink-0" ref={menuRef}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-expanded={menuOpen}
-            aria-label="Configurar autollenado y referencia"
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            <MoreHorizontal size={18} strokeWidth={1.5} aria-hidden />
-          </Button>
-          {menuOpen ? (
-            <div
-              className="absolute right-0 top-full z-50 mt-1 min-w-[min(100vw-2rem,18rem)] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-md"
-              role="menu"
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {[
+            { id: 'patrones', label: 'Patrones' },
+            { id: 'cuaderno', label: 'Cuaderno' },
+            { id: 'off', label: 'Off' },
+          ].map((o) => (
+            <Button
+              key={o.id}
+              type="button"
+              variant={mode === o.id ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 px-2 text-[11px] font-medium"
+              onClick={() => void persistPrefs({ altaAutoFillMode: o.id })}
             >
-              <p className="px-1 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Fuente del precio al autollenar
-              </p>
-              {[
-                { id: 'patrones', label: 'Patrones (inventario)' },
-                { id: 'cuaderno', label: 'Tabla de precios (cuaderno)' },
-                { id: 'off', label: 'Desactivado' },
-              ].map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={mode === o.id}
-                  className={cn(
-                    'mb-0.5 w-full rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
-                    mode === o.id
-                      ? 'bg-accent font-medium text-accent-foreground'
-                      : 'hover:bg-accent/60 hover:text-accent-foreground',
-                  )}
-                  onClick={() => persistPrefs({ altaAutoFillMode: o.id }, { closeMenu: true })}
-                >
-                  {o.label}
-                </button>
-              ))}
-              <div className="my-2 h-px bg-border" />
-              <label className="flex cursor-pointer items-start gap-2 px-1 py-1.5 text-xs leading-snug hover:bg-accent/50 rounded-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={prefs.altaAutofillNombreDesdeTags !== false}
-                  onChange={(e) =>
-                    persistPrefs({ altaAutofillNombreDesdeTags: e.target.checked }, { closeMenu: false })
-                  }
-                />
+              {o.label}
+            </Button>
+          ))}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label="Más opciones de autollenado"
+              >
+                <MoreHorizontal size={18} strokeWidth={1.5} aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[16rem]">
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                Opciones adicionales
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={prefs.altaAutofillNombreDesdeTags !== false}
+                onCheckedChange={(v) => void persistPrefs({ altaAutofillNombreDesdeTags: Boolean(v) })}
+              >
                 Autollenar nombre (patrones inventario)
-              </label>
-              <label className="flex cursor-pointer items-start gap-2 px-1 py-1.5 text-xs leading-snug hover:bg-accent/50 rounded-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={prefs.altaAutofillPrecioPatrones !== false}
-                  onChange={(e) =>
-                    persistPrefs({ altaAutofillPrecioPatrones: e.target.checked }, { closeMenu: false })
-                  }
-                />
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={prefs.altaAutofillPrecioPatrones !== false}
+                onCheckedChange={(v) => void persistPrefs({ altaAutofillPrecioPatrones: Boolean(v) })}
+              >
                 Autollenar precio vía patrones
-              </label>
-              <label className="flex cursor-pointer items-start gap-2 px-1 py-1.5 text-xs leading-snug hover:bg-accent/50 rounded-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={prefs.altaAutofillPrecioCuaderno !== false}
-                  onChange={(e) =>
-                    persistPrefs({ altaAutofillPrecioCuaderno: e.target.checked }, { closeMenu: false })
-                  }
-                />
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={prefs.altaAutofillPrecioCuaderno !== false}
+                onCheckedChange={(v) => void persistPrefs({ altaAutofillPrecioCuaderno: Boolean(v) })}
+              >
                 Autollenar precio vía cuaderno
-              </label>
-              <label className="flex cursor-pointer items-start gap-2 px-1 py-1.5 text-xs leading-snug hover:bg-accent/50 rounded-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={prefs.altaAutofillCodigoMsrNuevo !== false}
-                  onChange={(e) =>
-                    persistPrefs({ altaAutofillCodigoMsrNuevo: e.target.checked }, { closeMenu: false })
-                  }
-                />
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={prefs.altaAutofillCodigoMsrNuevo !== false}
+                onCheckedChange={(v) => void persistPrefs({ altaAutofillCodigoMsrNuevo: Boolean(v) })}
+              >
                 Código MSR automático al crear (editable)
-              </label>
-            </div>
-          ) : null}
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

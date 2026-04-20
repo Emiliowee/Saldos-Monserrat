@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import {
   ChevronRight,
   FilePlus,
@@ -61,18 +61,24 @@ export const CuadernoTreeAside = forwardRef(function CuadernoTreeAside(
   },
   ref,
 ) {
+  const [dragOverGroupId, setDragOverGroupId] = useState(null)
+
+  useEffect(() => {
+    if (draggingTagId == null) setDragOverGroupId(null)
+  }, [draggingTagId])
+
   return (
     <aside
       ref={ref}
       tabIndex={0}
       className={cn(
-        'order-2 flex min-h-0 w-full shrink-0 flex-col border-border/60 bg-muted/15 outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+        'order-2 flex min-h-0 w-full shrink-0 flex-col border-border/60 bg-sidebar outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
         'border-t lg:w-[272px] lg:max-w-[272px] lg:flex-none lg:border-t-0 lg:border-l',
       )}
     >
-      <div className="flex shrink-0 flex-col gap-2 border-b border-border/50 bg-card/70 px-2 py-2">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 bg-background/70 px-2 py-2">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Categorías</h2>
+          <h2 className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">Categorías</h2>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5">
             <Button
               type="button"
@@ -156,17 +162,32 @@ export const CuadernoTreeAside = forwardRef(function CuadernoTreeAside(
               const count = Number(g.option_count) || (g.options || []).length
               const selected = selectedGroupId === g.id
               return (
-                <div key={g.id} className="rounded-lg">
+                <div key={g.id} className="rounded-md">
                   <div
                     className={cn(
-                      'flex items-stretch gap-0.5 rounded-lg border transition-all duration-150 ease-out',
+                      'flex items-stretch gap-0.5 rounded-md border transition-colors duration-120',
                       selected
-                        ? 'border-primary/30 bg-primary/[0.08] shadow-[inset_0_0_0_1px_oklch(0.68_0.14_18_/_0.15)]'
-                        : 'border-transparent hover:border-border/50 hover:bg-muted/40',
+                        ? 'border-border/70 bg-background shadow-[0_1px_0_rgba(0,0,0,0.03)]'
+                        : 'border-transparent hover:border-border/40 hover:bg-muted/40 dark:hover:bg-zinc-800/50',
                       draggingGroupId === g.id && 'opacity-60',
+                      draggingTagId != null && dragOverGroupId === g.id && 'ring-2 ring-primary/40 bg-primary/[0.04]',
                     )}
-                    onDragOver={onDragOver}
-                    onDrop={(e) => onDropOnGroup(e, g.id)}
+                    onDragEnter={(e) => {
+                      if (draggingTagId == null) return
+                      e.preventDefault()
+                      setDragOverGroupId(g.id)
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget)) setDragOverGroupId(null)
+                    }}
+                    onDragOver={(e) => {
+                      onDragOver?.(e)
+                      if (draggingTagId != null) e.preventDefault()
+                    }}
+                    onDrop={(e) => {
+                      setDragOverGroupId(null)
+                      onDropOnGroup(e, g.id)
+                    }}
                     onContextMenu={(e) => onFolderContextMenu(e, g)}
                   >
                     <button
@@ -211,11 +232,11 @@ export const CuadernoTreeAside = forwardRef(function CuadernoTreeAside(
                               onClick={(e) => onTagClick(e, g, o)}
                               onContextMenu={(e) => onTagContextMenu(e, g, o)}
                               className={cn(
-                                'flex w-full cursor-default items-center gap-1.5 rounded px-1.5 py-1.5 text-left text-[11px] transition-colors duration-100',
-                                'hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                                'flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-[11.5px] transition-colors duration-100',
+                                'hover:bg-[#f1f0ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 dark:hover:bg-zinc-800/60',
                                 draggingTagId === o.id && 'cursor-grabbing opacity-60',
                                 o.active === false && 'opacity-50',
-                                selectedTagIds.includes(o.id) && 'bg-primary/10 ring-1 ring-primary/25',
+                                selectedTagIds.includes(o.id) && 'bg-[#ebeae8] ring-1 ring-border/80 dark:bg-zinc-800/80',
                               )}
                             >
                               <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground/70">

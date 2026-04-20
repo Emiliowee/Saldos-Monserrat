@@ -19,8 +19,16 @@ const DEFAULTS = {
   labelPdfSavePath: '',
   /** Nombre mostrado en la cabecera del sidebar (tipo Notion workspace) */
   workspaceDisplayName: 'Saldos Monserrat',
-  /** Ruta absoluta a imagen personalizada; vacío = logo por defecto `/branding/logo.jpg` */
+  /** Ruta absoluta: avatar del espacio = logo de empresa en etiquetas (bloque «Logo empresa»). Vacío = logo por defecto en la barra. */
   workspaceLogoPath: '',
+  /** Logo en PDF/vista previa: `thermal` = gris estilo térmica (por defecto), `original` = color del archivo. */
+  labelLogoStyle: 'thermal',
+  /** -30…30 en modo térmica: tinte más frío (negativo) o cálido/sepia (positivo). */
+  labelLogoWarmth: 0,
+  /** 70…130: contraste del logo en la etiqueta. */
+  labelLogoContrast: 100,
+  /** 0…200 en modo color: 100 = fiel al archivo, 0 = gris, >100 más vivo. */
+  labelLogoSaturation: 100,
   /** Carpeta Banqueta en sidebar: expandida al estilo Zen/Python */
   navBanquetaFolderOpen: true,
   /** Barra lateral colapsada (legacy; migrar a sidebarHidden) */

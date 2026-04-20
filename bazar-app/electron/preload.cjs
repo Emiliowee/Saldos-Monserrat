@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('bazar', {
   runtime: {
     platform: process.platform,
   },
+  assets: {
+    logoDataUrl: (absPath) => ipcRenderer.invoke('assets:logoDataUrl', absPath),
+    imageFileDataUrl: (absPath) => ipcRenderer.invoke('assets:imageFileDataUrl', absPath),
+  },
   db: {
     getProducts: (filters) => ipcRenderer.invoke('db:getProducts', filters),
     checkRequiredTagsForProduct: (map) => ipcRenderer.invoke('db:checkRequiredTagsForProduct', map),

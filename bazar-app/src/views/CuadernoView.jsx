@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { registerCuadernoNavGuard } from '@/lib/cuadernoNavGuard.js'
+import { appConfirm } from '@/lib/appConfirm'
 import { createPortal } from 'react-dom'
 import { FilePlus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -87,6 +88,7 @@ export function CuadernoView() {
   const [treeSearchOpen, setTreeSearchOpen] = useState(false)
   const [draggingGroupId, setDraggingGroupId] = useState(null)
   const [draggingTagId, setDraggingTagId] = useState(null)
+  const [tagOptionSaving, setTagOptionSaving] = useState(false)
 
   const [groupSheetId, setGroupSheetId] = useState(null)
   const [groupNameDraft, setGroupNameDraft] = useState('')
@@ -184,10 +186,15 @@ export function CuadernoView() {
       if (ev.button !== 0) return
       setCtxMenu(null)
     }
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') setCtxMenu(null)
+    }
     const t = window.setTimeout(() => window.addEventListener('mousedown', onDown), 0)
+    window.addEventListener('keydown', onKey)
     return () => {
       window.clearTimeout(t)
       window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
     }
   }, [ctxMenu])
 
@@ -434,8 +441,13 @@ export function CuadernoView() {
     if (!groupSheet) return
     const name = groupNameDraft.trim()
     if (!name) return
+    const api = window.bazar?.db
+    if (!api?.cuadernoRenameTagGroup) {
+      toast.error('Base de datos no disponible.')
+      return
+    }
     try {
-      await window.bazar.db.cuadernoRenameTagGroup({ id: groupSheet.id, name })
+      await api.cuadernoRenameTagGroup({ id: groupSheet.id, name })
       toast.success('Categoría actualizada')
       setGroupSheetId(null)
       void refresh()
@@ -446,8 +458,13 @@ export function CuadernoView() {
 
   const setGroupColor = async (notionColor) => {
     if (!groupSheet) return
+    const api = window.bazar?.db
+    if (!api?.cuadernoSetTagGroupStyle) {
+      toast.error('Base de datos no disponible.')
+      return
+    }
     try {
-      await window.bazar.db.cuadernoSetTagGroupStyle({ id: groupSheet.id, notionColor })
+      await api.cuadernoSetTagGroupStyle({ id: groupSheet.id, notionColor })
       void refresh()
     } catch (e) {
       toast.error(String(e?.message || e))
@@ -456,9 +473,14 @@ export function CuadernoView() {
 
   const deleteGroup = async () => {
     if (!groupSheet) return
-    if (!window.confirm('¿Eliminar esta categoría y todas sus etiquetas?')) return
+    if (!(await appConfirm('¿Eliminar esta categoría y todas sus etiquetas?', { destructive: true, confirmLabel: 'Eliminar' }))) return
+    const api = window.bazar?.db
+    if (!api?.cuadernoDeleteTagGroup) {
+      toast.error('Base de datos no disponible.')
+      return
+    }
     try {
-      await window.bazar.db.cuadernoDeleteTagGroup({ id: groupSheet.id })
+      await api.cuadernoDeleteTagGroup({ id: groupSheet.id })
       toast.success('Categoría eliminada')
       setGroupSheetId(null)
       void refresh()
@@ -469,34 +491,48 @@ export function CuadernoView() {
 
   const saveOptionSheet = async () => {
     if (!activeTagSheet) return false
+    if (tagOptionSaving) return false
     const name = optNameDraft.trim()
     if (!name) {
       toast.error('El nombre de la etiqueta es obligatorio')
       return false
     }
     const oid = activeTagSheet.optionId
+    const api = window.bazar?.db
+    if (!api?.cuadernoRenameTagOption || !api?.cuadernoSetTagOptionStyle || !api?.cuadernoSetTagOptionActive) {
+      toast.error('Base de datos no disponible.')
+      return false
+    }
+    setTagOptionSaving(true)
     try {
-      await window.bazar.db.cuadernoRenameTagOption({ id: oid, name })
-      await window.bazar.db.cuadernoSetTagOptionStyle({
+      await api.cuadernoRenameTagOption({ id: oid, name })
+      await api.cuadernoSetTagOptionStyle({
         id: oid,
         notionColor: optColor,
         tagIcon: optIcon,
       })
-      await window.bazar.db.cuadernoSetTagOptionActive({ id: oid, active: optActive })
+      await api.cuadernoSetTagOptionActive({ id: oid, active: optActive })
       toast.success('Etiqueta actualizada')
       void refresh()
       return true
     } catch (e) {
       toast.error(String(e?.message || e))
       return false
+    } finally {
+      setTagOptionSaving(false)
     }
   }
 
   const deleteOption = async () => {
     if (!activeTagSheet) return
-    if (!window.confirm('¿Eliminar esta etiqueta?')) return
+    if (!(await appConfirm('¿Eliminar esta etiqueta?', { destructive: true, confirmLabel: 'Eliminar' }))) return
+    const api = window.bazar?.db
+    if (!api?.cuadernoDeleteTagOption) {
+      toast.error('Base de datos no disponible.')
+      return
+    }
     try {
-      await window.bazar.db.cuadernoDeleteTagOption({ id: activeTagSheet.optionId })
+      await api.cuadernoDeleteTagOption({ id: activeTagSheet.optionId })
       toast.success('Etiqueta eliminada')
       setTagTabPinned(null)
       setMainCenter({ screen: 'home' })
@@ -561,7 +597,7 @@ export function CuadernoView() {
   const deleteSelectedTags = async () => {
     const ids = selectedTagIds.length ? selectedTagIds : []
     if (ids.length === 0) return
-    if (!window.confirm(`¿Eliminar ${ids.length} etiqueta(s)?`)) return
+    if (!(await appConfirm(`¿Eliminar ${ids.length} etiqueta(s)?`, { destructive: true, confirmLabel: 'Eliminar' }))) return
     for (const id of ids) {
       try {
         await window.bazar?.db?.cuadernoDeleteTagOption?.({ id })
@@ -618,7 +654,7 @@ export function CuadernoView() {
     const sortOpts = (arr) =>
       [...(arr || [])].sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'))
     if (!q) {
-      return groups.map((group) => ({ group, options: sortOpts(group.options) }))
+      return groups.map((group) => ({ group, options: [...(group.options || [])] }))
     }
     const out = []
     for (const group of groups) {
@@ -828,6 +864,7 @@ export function CuadernoView() {
                   openTagSheet(optSheet.groupId, optionId)
                 }}
                 onSave={() => void saveOptionSheet()}
+                isSaving={tagOptionSaving}
                 onClose={goHomeCenter}
                 onDelete={() => void deleteOption()}
               />
@@ -912,7 +949,7 @@ export function CuadernoView() {
             className="fixed z-[300] min-w-[200px] rounded-md border border-border bg-popover py-1 text-[12px] text-foreground shadow-lg"
             style={{
               left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 800) - 210),
-              top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 600) - 8),
+              top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 600) - 160),
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -947,8 +984,8 @@ export function CuadernoView() {
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-destructive hover:bg-destructive/10"
                   onClick={() => {
                     setCtxMenu(null)
-                    if (!window.confirm('¿Eliminar esta categoría y todas sus etiquetas?')) return
                     void (async () => {
+                      if (!(await appConfirm('¿Eliminar esta categoría y todas sus etiquetas?', { destructive: true, confirmLabel: 'Eliminar' }))) return
                       try {
                         await window.bazar?.db?.cuadernoDeleteTagGroup?.({ id: ctxMenu.groupId })
                         toast.success('Categoría eliminada')

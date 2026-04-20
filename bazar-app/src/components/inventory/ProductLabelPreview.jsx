@@ -24,6 +24,12 @@ export function ProductLabelPreview({
 }) {
   const [template, setTemplate] = useState(() => createDefaultTemplate())
   const [logoPath, setLogoPath] = useState('')
+  const [labelLogoOpts, setLabelLogoOpts] = useState({
+    labelLogoStyle: 'thermal',
+    labelLogoWarmth: 0,
+    labelLogoContrast: 100,
+    labelLogoSaturation: 100,
+  })
   const [workspaceName, setWorkspaceName] = useState('Saldos Monserrat')
   const [editorOpen, setEditorOpen] = useState(false)
 
@@ -36,11 +42,19 @@ export function ProductLabelPreview({
       const s = await window.bazar?.settings?.get?.()
       setLogoPath(String(s?.workspaceLogoPath || ''))
       setWorkspaceName(String(s?.workspaceDisplayName || 'Saldos Monserrat'))
+      setLabelLogoOpts({
+        labelLogoStyle: s?.labelLogoStyle === 'original' ? 'original' : 'thermal',
+        labelLogoWarmth: Number.isFinite(Number(s?.labelLogoWarmth)) ? Number(s.labelLogoWarmth) : 0,
+        labelLogoContrast: Number.isFinite(Number(s?.labelLogoContrast)) ? Number(s.labelLogoContrast) : 100,
+        labelLogoSaturation: Number.isFinite(Number(s?.labelLogoSaturation)) ? Number(s.labelLogoSaturation) : 100,
+      })
     } catch { /* noop */ }
   }
 
-  useEffect(() => { void load() }, [])
-  useEffect(() => { if (!editorOpen) void load() }, [editorOpen])
+  useEffect(() => {
+    if (editorOpen) return
+    void load()
+  }, [editorOpen])
 
   const data = {
     empresa: empresa || workspaceName,
@@ -48,22 +62,27 @@ export function ProductLabelPreview({
     precio: precioStrEtiqueta(precio),
     codigo: String(codigo || '').trim() || '—',
     logoPath,
+    ...labelLogoOpts,
   }
 
   /* escala automática: queremos ~280 px de ancho para la vista previa */
   const targetWidth = 280
-  const scale = Math.max(3, Math.min(10, targetWidth / (template.width_mm || 60)))
+  const widthMm = Number.isFinite(Number(template.width_mm)) ? Number(template.width_mm) : 60
+  const scale = Math.max(3, Math.min(10, targetWidth / widthMm))
 
   return (
     <div className="flex flex-col items-center gap-2">
       <div
         className="inline-block rounded-sm ring-1 ring-black/10 shadow-sm overflow-hidden bg-white"
-        style={{ width: template.width_mm * scale, height: template.height_mm * scale }}
+        style={{
+          width: widthMm * scale,
+          height: (Number.isFinite(Number(template.height_mm)) ? Number(template.height_mm) : 35) * scale,
+        }}
       >
         <LabelRender template={template} data={data} scale={scale} />
       </div>
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span>Vista previa · {template.name}</span>
+        <span>Vista previa · {template.name} · logo = avatar del espacio</span>
         <span className="opacity-40">·</span>
         <button
           type="button"

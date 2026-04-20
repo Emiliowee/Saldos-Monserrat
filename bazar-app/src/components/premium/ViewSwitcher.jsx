@@ -25,7 +25,7 @@ export function ViewSwitcher({ views, current, onChange }) {
               'group relative inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-[12px] font-medium leading-none tracking-[-0.005em] transition-colors duration-120',
               active
                 ? 'text-foreground'
-                : 'text-muted-foreground/80 hover:bg-[#f1f0ef] hover:text-foreground/90 dark:hover:bg-zinc-800/60',
+                : 'text-muted-foreground/80 hover:bg-muted/70 hover:text-foreground/90 dark:hover:bg-muted/55',
             )}
           >
             {v.icon ? <span className="shrink-0 opacity-80">{v.icon}</span> : null}

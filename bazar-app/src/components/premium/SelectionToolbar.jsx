@@ -41,7 +41,7 @@ export function SelectionToolbar({ count, actions, onClear, countLabel = 'selecc
         className={cn(
           'pointer-events-auto flex items-center gap-1 rounded-xl border border-border/50 px-2 py-1.5 text-[12.5px]',
           'bg-background/90 shadow-[0_2px_8px_hsl(0_0%_0%/0.04),0_12px_32px_hsl(0_0%_0%/0.08)] backdrop-blur-md',
-          'dark:bg-zinc-900/90 dark:shadow-[0_2px_8px_hsl(0_0%_0%/0.35),0_12px_32px_hsl(0_0%_0%/0.45)]',
+          'dark:bg-card/95 dark:shadow-[0_2px_8px_hsl(0_0%_0%/0.35),0_12px_32px_hsl(0_0%_0%/0.45)]',
         )}
       >
         <div className="flex items-center gap-1.5 pl-1.5 pr-2">
@@ -56,7 +56,7 @@ export function SelectionToolbar({ count, actions, onClear, countLabel = 'selecc
         <button
           type="button"
           onClick={onClear}
-          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-[#f1f0ef] hover:text-foreground dark:hover:bg-zinc-800/70"
+          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-muted/70 hover:text-foreground dark:hover:bg-muted/55"
           aria-label="Quitar selección"
           title="Quitar selección"
         >
@@ -68,17 +68,18 @@ export function SelectionToolbar({ count, actions, onClear, countLabel = 'selecc
 }
 
 /** Botón interno estándar de la SelectionToolbar. */
-export function SelectionToolbarButton({ icon, label, onClick, destructive = false, disabled = false }) {
+export function SelectionToolbarButton({ icon, label, onClick, destructive = false, disabled = false, title }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       disabled={disabled}
       className={cn(
         'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition-colors',
         destructive
           ? 'text-destructive hover:bg-destructive/10'
-          : 'text-foreground/85 hover:bg-[#f1f0ef] dark:hover:bg-zinc-800/70',
+          : 'text-foreground/85 hover:bg-muted/70 dark:hover:bg-muted/55',
         'disabled:cursor-not-allowed disabled:opacity-50',
       )}
     >

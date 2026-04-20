@@ -17,7 +17,6 @@ import {
   EyeOff,
   Folder,
   FolderOpen,
-  Keyboard,
   PanelLeftIcon,
   ChevronLeft,
   ChevronRight,
@@ -42,8 +41,19 @@ import {
 
 const DEFAULT_LOGO = '/branding/logo.jpg'
 
-const SEARCH_KBD =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/i.test(navigator.platform) ? '⌘K' : 'Ctrl+K'
+function isApplePlatform() {
+  if (typeof navigator === 'undefined') return false
+  const ua = String(navigator.userAgent || '')
+  try {
+    const plat = /** @type {any} */ (navigator).userAgentData?.platform
+    if (typeof plat === 'string' && plat.toLowerCase().includes('mac')) return true
+  } catch {
+    /* noop */
+  }
+  return /Mac|iPhone|iPod|iPad/i.test(ua)
+}
+
+const SEARCH_KBD = isApplePlatform() ? '⌘K' : 'Ctrl+K'
 
 const NAV_MAIN = [
   { id: 'inicio', label: 'Inicio', Icon: Home, kbd: null },
@@ -57,25 +67,23 @@ const NAV_MORE = [
   { id: 'banqueta', label: 'Banqueta', Icon: MapPin, kbd: 'F4' },
 ]
 
-/** Notion-style: 8px grid, 22px icon column, 30px search, 6px section gaps, #f1f0ef hover, warm grays (no jump to black). */
-const ROW_HOVER = 'hover:bg-[#f1f0ef] dark:hover:bg-zinc-800/80'
-const ROW_ACTIVE = 'bg-[#f1f0ef] dark:bg-zinc-800/55'
+/** Notion-style: 8px grid, 22px icon column; hovers desde tokens (--muted), sin hex fijos. */
+const ROW_HOVER = 'hover:bg-muted/70 dark:hover:bg-muted/50'
+const ROW_ACTIVE = 'bg-muted/90 dark:bg-muted/65'
 const TEXT_ROW = 'text-muted-foreground'
-/** Hover: ligeramente más oscuro que muted, sin negro puro */
-const TEXT_ROW_HOVER =
-  'hover:text-foreground/80 dark:hover:text-zinc-200/90'
+const TEXT_ROW_HOVER = 'hover:text-foreground/85 dark:hover:text-foreground/90'
 const ICON_STROKE = 1.5
 /** Columna de iconos alineada (22px) — glifo 15px centrado */
 const ICON_COL =
   'inline-flex size-[22px] shrink-0 items-center justify-center text-muted-foreground'
-const ICON_COL_HOVER = 'group-hover:text-foreground/75 dark:group-hover:text-zinc-300/95'
+const ICON_COL_HOVER = 'group-hover:text-foreground/80 dark:group-hover:text-foreground/85'
 const PAD_X = 'px-4'
 
 /** Botones discretos en cabecera (tipo Linear/Notion): poco contraste hasta hover */
 const HEADER_ICON_BTN = cn(
   'inline-flex size-[22px] shrink-0 items-center justify-center rounded-md p-0',
   'text-muted-foreground/55 opacity-90 transition-[opacity,background-color,color] duration-150',
-  'hover:bg-[#f1f0ef] hover:text-foreground/70 hover:opacity-100 dark:hover:bg-zinc-800/75 dark:hover:text-zinc-300/90',
+  'hover:bg-muted/70 hover:text-foreground/75 hover:opacity-100 dark:hover:bg-muted/55 dark:hover:text-foreground/85',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
 )
 
@@ -90,6 +98,7 @@ function SidebarPanelButton({ className }) {
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
       aria-label="Alternar barra lateral"
+      title="Mostrar u ocultar barra lateral (Ctrl+B)"
       onClick={() => toggleSidebar()}
       className={className}
     >
@@ -200,7 +209,7 @@ function BanquetaSalidasSection({ onOpenSalida, onCreate, onGoSection, onHide })
           className={cn(
             'flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors',
             'text-muted-foreground/80',
-            'hover:bg-muted/55 hover:text-foreground/80 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-300/90',
+            'hover:bg-muted/60 hover:text-foreground/85 dark:hover:bg-muted/50 dark:hover:text-foreground/90',
           )}
           aria-expanded={open}
         >
@@ -233,7 +242,7 @@ function BanquetaSalidasSection({ onOpenSalida, onCreate, onGoSection, onHide })
           onClick={(e) => { e.stopPropagation(); onCreate?.() }}
           className={cn(
             'inline-flex size-[20px] shrink-0 items-center justify-center rounded-md opacity-0 transition-opacity',
-            'text-muted-foreground/70 hover:bg-muted/55 hover:text-foreground/80 dark:hover:bg-zinc-800/70',
+            'text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground/85 dark:hover:bg-muted/50',
             'group-hover/section:opacity-100 focus-visible:opacity-100',
           )}
         >
@@ -248,9 +257,9 @@ function BanquetaSalidasSection({ onOpenSalida, onCreate, onGoSection, onHide })
               onClick={(e) => e.stopPropagation()}
               className={cn(
                 'inline-flex size-[20px] shrink-0 items-center justify-center rounded-md opacity-0 transition-opacity',
-                'text-muted-foreground/70 hover:bg-muted/55 hover:text-foreground/80 dark:hover:bg-zinc-800/70',
+                'text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground/85 dark:hover:bg-muted/50',
                 'group-hover/section:opacity-100 focus-visible:opacity-100',
-                menuOpen && 'bg-muted/55 opacity-100 dark:bg-zinc-800/70',
+                menuOpen && 'bg-muted/60 opacity-100 dark:bg-muted/50',
               )}
             >
               <MoreHorizontal className="size-[12px]" strokeWidth={2} />
@@ -284,8 +293,8 @@ function BanquetaSalidasSection({ onOpenSalida, onCreate, onGoSection, onHide })
               onClick={() => onCreate?.()}
               className={cn(
                 'flex h-[26px] items-center gap-2 rounded-md pl-[28px] pr-2 text-left text-[12px] italic',
-                'text-muted-foreground/55 hover:bg-[#f1f0ef] hover:text-foreground/75',
-                'dark:hover:bg-zinc-800/60 dark:hover:text-zinc-300/85',
+                'text-muted-foreground/55 hover:bg-muted/70 hover:text-foreground/80',
+                'dark:hover:bg-muted/50 dark:hover:text-foreground/85',
               )}
             >
               <Plus className="size-[11px]" strokeWidth={1.75} />
@@ -322,8 +331,8 @@ function BanquetaSalidasSection({ onOpenSalida, onCreate, onGoSection, onHide })
                 onClick={() => onGoSection?.()}
                 className={cn(
                   'mt-px flex h-[22px] items-center gap-1 rounded-md pl-[28px] pr-2 text-left text-[10.5px]',
-                  'text-muted-foreground/55 hover:bg-[#f1f0ef] hover:text-foreground/75',
-                  'dark:hover:bg-zinc-800/60 dark:hover:text-zinc-300/80',
+                  'text-muted-foreground/55 hover:bg-muted/70 hover:text-foreground/80',
+                  'dark:hover:bg-muted/50 dark:hover:text-foreground/85',
                 )}
               >
                 Ver todas
@@ -349,7 +358,7 @@ function SalidaRow({ salida, variant, onClick }) {
       onClick={onClick}
       className={cn(
         'group/sal flex h-[26px] w-full items-center gap-1.5 rounded-md pl-[22px] pr-2 text-left transition-colors',
-        'hover:bg-[#f1f0ef] dark:hover:bg-zinc-800/70',
+        'hover:bg-muted/70 dark:hover:bg-muted/50',
         isActiva && 'bg-primary/[0.04] hover:bg-primary/[0.08]',
       )}
     >
@@ -496,7 +505,7 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
           <SidebarPanelButton
             className={cn(
               'inline-flex size-[22px] shrink-0 items-center justify-center p-0 text-muted-foreground/70 transition-colors',
-              'hover:bg-[#f1f0ef] hover:text-foreground/80 dark:hover:bg-zinc-800/80 dark:hover:text-zinc-200/90',
+              'hover:bg-muted/70 hover:text-foreground/85 dark:hover:bg-muted/55 dark:hover:text-foreground/90',
             )}
           />
         </div>
@@ -531,7 +540,7 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
           <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-52 rounded-lg">
             <DropdownMenuItem inset={false} onClick={goWorkspaceSettings} className="gap-2 text-[13px]">
               <Settings className="size-3.5 opacity-70" />
-              Configuración del espacio
+              Configuración
             </DropdownMenuItem>
             <DropdownMenuSeparator className="" />
             <DropdownMenuItem
@@ -554,9 +563,8 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
           className={cn(
             'flex h-[30px] w-full items-center gap-2 rounded-lg border-0 pl-0 pr-2.5 text-[12.5px] font-medium leading-none shadow-none transition-colors',
             TEXT_ROW,
-            'bg-muted/30 dark:bg-zinc-800/40',
-            'hover:bg-muted/45 hover:text-foreground/82 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200/90',
-            ROW_HOVER,
+            'bg-muted/30 dark:bg-muted/40',
+            'hover:bg-muted/55 hover:text-foreground/85 dark:hover:bg-muted/50 dark:hover:text-foreground/90',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/25',
           )}
         >
@@ -621,12 +629,6 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
             active={section === 'config'}
             onClick={() => onNavigate('config')}
           />
-        </div>
-        <div className="mt-1.5 flex items-center gap-2 pl-0 pr-2 text-[10px] leading-snug text-muted-foreground">
-          <span className={ICON_COL}>
-            <Keyboard className="size-[14px]" strokeWidth={ICON_STROKE} />
-          </span>
-          <span>Ctrl+B ocultar sidebar</span>
         </div>
       </SidebarFooter>
     </Sidebar>

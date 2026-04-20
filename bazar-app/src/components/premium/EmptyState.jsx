@@ -22,7 +22,7 @@ export function EmptyState({ icon, title, description, action, className, size =
       <div
         aria-hidden
         className={cn(
-          'inline-flex items-center justify-center rounded-2xl bg-muted/30 text-muted-foreground/75 dark:bg-zinc-800/50',
+          'inline-flex items-center justify-center rounded-2xl bg-muted/30 text-muted-foreground/75 dark:bg-muted/50',
           size === 'compact' ? 'size-10' : 'size-14',
         )}
       >

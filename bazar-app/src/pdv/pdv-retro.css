@@ -1,0 +1,7 @@
+/**
+ * Ventana POS (#pdv-terminal): los colores vienen del ThemeProvider (tokens en index.css).
+ * Este archivo solo evita reglas legacy que pisaban inputs/botones con marrón/verde/ámbar.
+ */
+[data-pdv-standalone] {
+  -webkit-font-smoothing: antialiased;
+}

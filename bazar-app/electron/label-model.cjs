@@ -17,7 +17,8 @@ const BLOCK_META = {
     label: 'Empresa',
     defaults: { fontSize: 6, fontWeight: 'bold', align: 'center', color: '#6B4A52' },
   },
-  logo: { label: 'Logo', defaults: { objectFit: 'contain' } },
+  logo: { label: 'Logo empresa', defaults: { objectFit: 'contain' } },
+  imagen_fija: { label: 'Imagen / icono', defaults: { objectFit: 'contain', imagePath: '' } },
   nombre: {
     label: 'Nombre',
     defaults: { fontSize: 6.5, fontWeight: 'normal', align: 'left', color: '#141417', maxLines: 2 },
@@ -45,7 +46,15 @@ const BLOCK_META = {
   },
   texto_libre: {
     label: 'Texto',
-    defaults: { fontSize: 6.5, fontWeight: 'normal', align: 'center', color: '#141417', text: 'Texto' },
+    defaults: {
+      fontSize: 5,
+      fontWeight: 'normal',
+      align: 'center',
+      color: '#141417',
+      text: 'Texto',
+      maxLines: 8,
+      lineHeight: 1.2,
+    },
   },
   separador: {
     label: 'Separador',
@@ -74,7 +83,8 @@ function tplEstandarBazar() {
     background: '#FFFFFF',
     border: { enabled: true, width: 0.45, color: '#D4D2CE' },
     blocks: [
-      { id: 'b_empresa', type: 'empresa', x: 2, y: 1.2, w: W - 4, h: 3, visible: true, fontSize: 5.5, fontWeight: 'bold', align: 'center', color: '#6B4A52' },
+      { id: 'b_logo', type: 'logo', x: 2, y: 1.2, w: 6.5, h: 3, visible: true, objectFit: 'contain' },
+      { id: 'b_empresa', type: 'empresa', x: 9.5, y: 1.2, w: W - 11.5, h: 3, visible: true, fontSize: 5.5, fontWeight: 'bold', align: 'center', color: '#6B4A52' },
       { id: 'b_nombre', type: 'nombre', x: 2, y: 4.2, w: W - 4, h: 10.5, visible: true, fontSize: 6.5, fontWeight: 'normal', align: 'left', color: '#141417', maxLines: 2 },
       { id: 'b_precio', type: 'precio', x: 2, y: 15, w: W - 4, h: 6.2, visible: true, fontSize: 10, fontWeight: 'bold', align: 'center', color: '#141417', showLabel: false, labelText: 'PRECIO:', labelFontSize: 6, labelColor: '#141417' },
       { id: 'b_barcode', type: 'codigo_barras', x: 3, y: 21.5, w: W - 6, h: 9, visible: true, barColor: '#000000', background: '#FFFFFF' },
@@ -102,7 +112,8 @@ function tplTicketCompacto() {
       { id: 'bc_bar', type: 'codigo_barras', x: 2.5, y: 4.5, w: W - 5, h: 8, visible: true, barColor: '#000000', background: '#FFFFFF' },
       { id: 'bc_precio', type: 'precio', x: 2, y: 13, w: W - 4, h: 7, visible: true, fontSize: 11, fontWeight: 'bold', align: 'center', color: '#141417', showLabel: false },
       { id: 'bc_nombre', type: 'nombre', x: 2, y: 20, w: W - 4, h: 6, visible: true, fontSize: 6, fontWeight: 'normal', align: 'center', color: '#141417', maxLines: 2 },
-      { id: 'bc_emp', type: 'empresa', x: 2, y: 26.5, w: W - 4, h: 2.8, visible: true, fontSize: 5, fontWeight: 'bold', align: 'center', color: '#6B4A52' },
+      { id: 'bc_logo', type: 'logo', x: 2, y: 26.5, w: 4, h: 2.8, visible: true, objectFit: 'contain' },
+      { id: 'bc_emp', type: 'empresa', x: 7, y: 26.5, w: W - 9, h: 2.8, visible: true, fontSize: 5, fontWeight: 'bold', align: 'center', color: '#6B4A52' },
     ],
   }
 }
@@ -122,7 +133,8 @@ function tplGondola() {
     background: '#FFFFFF',
     border: { enabled: true, width: 0.45, color: '#D4D2CE' },
     blocks: [
-      { id: 'go_nom', type: 'nombre', x: 2, y: 2, w: 36, h: 11, visible: true, fontSize: 6.5, fontWeight: 'normal', align: 'left', color: '#141417', maxLines: 2 },
+      { id: 'go_logo', type: 'logo', x: 2, y: 2, w: 6, h: 6, visible: true, objectFit: 'contain' },
+      { id: 'go_nom', type: 'nombre', x: 9, y: 2, w: 29, h: 11, visible: true, fontSize: 6.5, fontWeight: 'normal', align: 'left', color: '#141417', maxLines: 2 },
       { id: 'go_pre', type: 'precio', x: 40, y: 3, w: W - 42, h: 9, visible: true, fontSize: 10, fontWeight: 'bold', align: 'center', color: '#141417', showLabel: false },
       { id: 'go_bar', type: 'codigo_barras', x: 2, y: 13.5, w: W - 4, h: 8, visible: true, barColor: '#000000', background: '#FFFFFF' },
       { id: 'go_cod', type: 'codigo', x: 2, y: 22, w: W - 4, h: 3.5, visible: true, fontSize: 5.5, fontWeight: 'bold', align: 'center', color: '#52525B' },
@@ -145,7 +157,8 @@ function tplPrecioDestacado() {
     background: '#FFFFFF',
     border: { enabled: true, width: 0.5, color: '#C6C6C7' },
     blocks: [
-      { id: 'pd_pre', type: 'precio', x: 2, y: 2, w: W - 4, h: 9, visible: true, fontSize: 13, fontWeight: 'bold', align: 'center', color: '#141417', showLabel: false },
+      { id: 'pd_pre', type: 'precio', x: 2, y: 2, w: 30, h: 9, visible: true, fontSize: 13, fontWeight: 'bold', align: 'center', color: '#141417', showLabel: false },
+      { id: 'pd_logo', type: 'logo', x: 34, y: 2, w: 6, h: 6, visible: true, objectFit: 'contain' },
       { id: 'pd_nom', type: 'nombre', x: 2, y: 11.5, w: W - 4, h: 8, visible: true, fontSize: 6, fontWeight: 'normal', align: 'center', color: '#141417', maxLines: 2 },
       { id: 'pd_bar', type: 'codigo_barras', x: 2.5, y: 19.5, w: W - 5, h: 6, visible: true, barColor: '#000000', background: '#FFFFFF' },
       { id: 'pd_cod', type: 'codigo', x: 2, y: 25.5, w: W - 4, h: 2.5, visible: true, fontSize: 5, fontWeight: 'bold', align: 'center', color: '#71717A' },

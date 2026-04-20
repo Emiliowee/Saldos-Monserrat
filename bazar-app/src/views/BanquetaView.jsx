@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Calendar, CheckCircle2, CircleDot, FolderOpen, MapPin, Package, Plus, Printer,
+  Calendar, CheckCircle2, CircleDot, FilterX, FolderOpen, MapPin, Package, Plus, Printer,
   RefreshCw, ScanLine, Shirt, Trash2, X, Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAppStore } from '@/stores/useAppStore'
 import { formatPrice } from '@/lib/format.js'
+import { banquetaPrecioParaToggleVendido, buildBanquetaPrintHtml } from '@/lib/banquetaPrint.js'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useBanquetaFolderVisibility } from '@/components/shell/AppSidebar'
-import { PageHeader, PageHeaderDivider, EmptyState } from '@/components/premium'
+import { PageHeader, PageHeaderDivider, EmptyState, ChipFilter, SearchField } from '@/components/premium'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 function estadoLabel(estado) {
@@ -18,24 +19,6 @@ function estadoLabel(estado) {
   if (e === 'activa') return 'Activa'
   if (e === 'cerrada') return 'Cerrada'
   return 'Borrador'
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
-function formatFechaLarga(raw) {
-  if (!raw) return ''
-  const s = String(raw).trim()
-  let d
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const [y, m, dd] = s.split('-').map((n) => Number(n))
-    d = new Date(y, (m || 1) - 1, dd || 1)
-  } else {
-    d = new Date(s)
-  }
-  if (!Number.isFinite(d.getTime())) return ''
-  return d.toLocaleDateString('es-MX', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 }
 
 function formatFechaCorta(raw) {
@@ -64,103 +47,6 @@ function toDateInputValue(raw) {
   return `${y}-${m}-${dd}`
 }
 
-/** Hoja de trabajo imprimible: columnas en blanco para apuntar a mano. */
-function buildPrintHtml(detail) {
-  if (!detail?.salida) return ''
-  const salida = detail.salida
-  const items = Array.isArray(detail.items) ? detail.items : []
-  const title = String(salida.nombre || `Salida #${salida.id}`)
-  const fecha = formatFechaLarga(salida.fecha_planeada)
-  const lugar = String(salida.lugar || '').trim()
-  const totalRef = items.reduce((s, it) => s + (Number(it.precio_snapshot ?? it.precio_actual) || 0), 0)
-
-  const rows = items.map((it, idx) => {
-    const cod = String(it.codigo_snapshot || it.codigo_actual || '').trim()
-    const nom = String(it.nombre_snapshot || it.descripcion_actual || cod).trim()
-    const pr = formatPrice(Number(it.precio_snapshot ?? it.precio_actual) || 0)
-    return `<tr>
-      <td class="num">${idx + 1}</td>
-      <td class="mono">${escapeHtml(cod)}</td>
-      <td>${escapeHtml(nom)}</td>
-      <td class="price">${escapeHtml(pr)}</td>
-      <td class="chk"></td>
-      <td class="write"></td>
-      <td class="write wide"></td>
-    </tr>`
-  }).join('')
-
-  const metaLine = [
-    fecha && `<span class="meta-item"><b>Fecha:</b> ${escapeHtml(fecha)}</span>`,
-    lugar && `<span class="meta-item"><b>Lugar:</b> ${escapeHtml(lugar)}</span>`,
-    `<span class="meta-item"><b>Piezas:</b> ${items.length}</span>`,
-  ].filter(Boolean).join('')
-
-  return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8"/>
-<title>${escapeHtml(title)}</title>
-<style>
-  /* Paleta alineada a tokens claros (foreground / muted / border) — hoja siempre legible en papel */
-  :root {
-    --bq-fg: hsl(240 10% 9%);
-    --bq-fg-strong: hsl(240 10% 4%);
-    --bq-muted: hsl(240 4% 38%);
-    --bq-muted-2: hsl(240 3% 46%);
-    --bq-border: hsl(240 6% 88%);
-    --bq-border-strong: hsl(240 6% 18%);
-    --bq-meta-bg: hsl(240 5% 96%);
-    --bq-row: hsl(240 5% 94%);
-  }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; padding: 24px 28px; color: var(--bq-fg); max-width: 860px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; letter-spacing: -0.01em; color: var(--bq-fg-strong); }
-  .sub { font-size: 11px; color: var(--bq-muted-2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
-  .meta { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--bq-muted); margin-bottom: 20px; padding: 10px 14px; border-radius: 10px; background: var(--bq-meta-bg); border: 1px solid var(--bq-border); }
-  .meta-item b { font-weight: 600; color: var(--bq-fg-strong); margin-right: 4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  thead th { font-weight: 600; font-size: 9.5px; text-transform: uppercase; color: var(--bq-muted); letter-spacing: 0.06em; border-bottom: 1px solid var(--bq-border-strong); padding: 8px 6px; text-align: left; }
-  tbody td { border-bottom: 1px solid var(--bq-border); padding: 10px 6px; vertical-align: middle; }
-  td.num { width: 26px; color: var(--bq-muted-2); text-align: center; font-size: 11px; }
-  td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; width: 76px; color: var(--bq-fg); }
-  td.price { width: 72px; text-align: right; color: var(--bq-muted); font-variant-numeric: tabular-nums; font-size: 11.5px; }
-  th.chk, td.chk { width: 34px; text-align: center; }
-  td.chk::before { content: ""; display: inline-block; width: 14px; height: 14px; border: 1.3px solid var(--bq-border-strong); border-radius: 3px; }
-  td.write { border-bottom: 1px solid var(--bq-border); background: linear-gradient(to bottom, transparent, hsl(240 5% 98%)); }
-  th.write-col, td.write { width: 110px; }
-  th.wide, td.wide { width: 170px; }
-  tfoot td { padding-top: 14px; font-size: 11px; color: var(--bq-muted); }
-  .total { text-align: right; font-weight: 600; font-size: 13px; color: var(--bq-fg-strong); padding-top: 16px; }
-  .foot { margin-top: 26px; font-size: 10px; color: var(--bq-muted-2); display: flex; justify-content: space-between; border-top: 1px solid var(--bq-border); padding-top: 10px; }
-  @media print {
-    body { padding: 14px 18px; }
-    .no-print { display: none; }
-  }
-</style></head>
-<body>
-  <div class="sub">Hoja de trabajo · Banqueta</div>
-  <h1>${escapeHtml(title)}</h1>
-  <div class="meta">${metaLine}</div>
-  <table>
-    <thead>
-      <tr>
-        <th class="num">#</th>
-        <th>Código</th>
-        <th>Descripción</th>
-        <th class="price">Precio ref.</th>
-        <th class="chk">✓</th>
-        <th class="write-col">$ Vendido</th>
-        <th class="wide">Notas</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <div class="total">Total referencia: ${escapeHtml(formatPrice(totalRef))}</div>
-  <div class="foot">
-    <span>Impreso: ${escapeHtml(new Date().toLocaleString('es-MX'))}</span>
-    <span>Firma: ____________________</span>
-  </div>
-</body></html>`
-}
-
 function emitChange() { window.dispatchEvent(new CustomEvent('bazar:banqueta-salidas-changed')) }
 
 async function runPrint(detail) {
@@ -168,7 +54,7 @@ async function runPrint(detail) {
   const api = window.bazar?.banqueta?.printSheet
   /* Fallback (modo web, sin Electron): ventana emergente con HTML. */
   if (!api) {
-    const html = buildPrintHtml(detail); if (!html) return
+    const html = buildBanquetaPrintHtml(detail); if (!html) return
     const w = window.open('', '_blank', 'noopener,noreferrer'); if (!w) { toast.error('Ventana bloqueada.'); return }
     w.document.write(html); w.document.close(); w.focus()
     setTimeout(() => { try { w.print() } catch { /* noop */ } }, 250)
@@ -187,7 +73,11 @@ async function runPrint(detail) {
 function Overlay({ children, onClose, widthClass = 'w-full max-w-sm' }) {
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] dark:bg-black/55" onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-foreground/10 backdrop-blur-[2px] dark:bg-background/70 dark:backdrop-blur-md"
+        onClick={onClose}
+        aria-hidden
+      />
       <div className={cn('relative z-10 mx-4', widthClass)} onClick={(e) => e.stopPropagation()}>{children}</div>
     </div>,
     document.body,
@@ -214,7 +104,7 @@ function ModalNueva({ open, onClose, onCreate, busy }) {
         </div>
         <div className="space-y-3.5 px-5 py-4">
           <div className="space-y-1">
-            <label className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Nombre</label>
+            <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">Nombre</label>
             <input
               className="h-9 w-full rounded-md border border-border/60 bg-background px-3 text-[13px] outline-none focus:ring-1 focus:ring-ring"
               placeholder="Feria del sábado"
@@ -226,7 +116,7 @@ function ModalNueva({ open, onClose, onCreate, busy }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Calendar className="size-3" /> Fecha planeada</label>
+              <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80 flex items-center gap-1"><Calendar className="size-3" /> Fecha planeada</label>
               <input
                 type="date"
                 className="h-9 w-full rounded-md border border-border/60 bg-background px-3 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
@@ -235,7 +125,7 @@ function ModalNueva({ open, onClose, onCreate, busy }) {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground flex items-center gap-1"><MapPin className="size-3" /> Lugar</label>
+              <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80 flex items-center gap-1"><MapPin className="size-3" /> Lugar</label>
               <input
                 className="h-9 w-full rounded-md border border-border/60 bg-background px-3 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
                 placeholder="Banqueta del local"
@@ -275,7 +165,7 @@ function ModalConfirm({ open, title, body, confirmLabel, danger, onClose, onConf
 /* ── Modal: preview de impresión ─────────────────────────────────────── */
 function ModalPrintPreview({ open, detail, onClose, onPrint }) {
   if (!open || !detail?.salida) return null
-  const html = buildPrintHtml(detail)
+  const html = buildBanquetaPrintHtml(detail)
   return (
     <Overlay onClose={onClose} widthClass="w-full max-w-3xl">
       <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-xl border border-border/60 bg-card shadow-2xl">
@@ -315,15 +205,15 @@ function ModalCloseSummary({ open, detail, onClose, onConfirm, busy }) {
         <div className="px-5 py-4 space-y-3">
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
-              <p className="text-[9.5px] uppercase tracking-widest text-muted-foreground font-medium">Vendidas</p>
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">Vendidas</p>
               <p className="text-[18px] font-semibold tabular-nums mt-0.5">{vendidos.length}</p>
             </div>
             <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
-              <p className="text-[9.5px] uppercase tracking-widest text-muted-foreground font-medium">Regresan</p>
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">Regresan</p>
               <p className="text-[18px] font-semibold tabular-nums mt-0.5">{pendientes.length}</p>
             </div>
             <div className="rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2.5">
-              <p className="text-[9.5px] uppercase tracking-widest text-primary/80 font-medium">Total</p>
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-primary/85">Total</p>
               <p className="text-[18px] font-semibold tabular-nums mt-0.5">{formatPrice(total)}</p>
             </div>
           </div>
@@ -363,7 +253,7 @@ function ItemRow({ item, editable, showResult, busy, onRemove, onToggleVendido, 
     <div
       className={cn(
         'group/item flex items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 transition-colors',
-        vendido ? 'border-success/25 bg-success/[0.07]' : 'hover:bg-muted/55 dark:hover:bg-zinc-800/60',
+        vendido ? 'border-success/25 bg-success/[0.07]' : 'hover:bg-muted/60 dark:hover:bg-muted/50',
       )}
     >
       <div className="flex-1 min-w-0">
@@ -378,6 +268,7 @@ function ItemRow({ item, editable, showResult, busy, onRemove, onToggleVendido, 
             type="button"
             onClick={() => onToggleVendido?.(!vendido)}
             disabled={busy}
+            title={vendido ? 'Quitar marca de vendida' : 'Marcar esta prenda como vendida en la salida'}
             className={cn(
               'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors',
               vendido
@@ -386,7 +277,7 @@ function ItemRow({ item, editable, showResult, busy, onRemove, onToggleVendido, 
             )}
           >
             <CheckCircle2 className={cn('size-3.5', vendido ? 'opacity-100' : 'opacity-40')} strokeWidth={2} />
-            {vendido ? 'Vendida' : 'Marcar'}
+            {vendido ? 'Vendida' : 'Marcar vendida'}
           </button>
           <input
             type="number"
@@ -526,7 +417,11 @@ function SalidaWorkspace({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] dark:bg-black/55" onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-foreground/10 backdrop-blur-[2px] dark:bg-background/70 dark:backdrop-blur-md"
+        onClick={onClose}
+        aria-hidden
+      />
       <div
         className="relative z-10 mx-4 flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border/60 bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -569,7 +464,7 @@ function SalidaWorkspace({
               <div className="rounded-lg border border-border/60 bg-muted/15 p-3.5 dark:bg-muted/10">
                 <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[9.5px] font-medium uppercase tracking-widest text-muted-foreground">Nombre</label>
+                  <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">Nombre</label>
                   <input
                     className="h-8 w-full rounded-md border border-border/60 bg-background px-2.5 text-[12.5px] outline-none transition-colors focus:ring-1 focus:ring-ring"
                     value={nombre}
@@ -579,7 +474,7 @@ function SalidaWorkspace({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9.5px] font-medium uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Calendar className="size-3" /> Fecha planeada</label>
+                  <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80 flex items-center gap-1"><Calendar className="size-3" /> Fecha planeada</label>
                   <input
                     type="date"
                     className="h-8 w-full rounded-md border border-border/60 bg-background px-2.5 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
@@ -589,7 +484,7 @@ function SalidaWorkspace({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9.5px] font-medium uppercase tracking-widest text-muted-foreground flex items-center gap-1"><MapPin className="size-3" /> Lugar</label>
+                  <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80 flex items-center gap-1"><MapPin className="size-3" /> Lugar</label>
                   <input
                     className="h-8 w-full rounded-md border border-border/60 bg-background px-2.5 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
                     value={lugar}
@@ -600,7 +495,7 @@ function SalidaWorkspace({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9.5px] font-medium uppercase tracking-widest text-muted-foreground">Notas</label>
+                  <label className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">Notas</label>
                   <input
                     className="h-8 w-full rounded-md border border-border/60 bg-background px-2.5 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
                     value={notas}
@@ -667,7 +562,7 @@ function SalidaWorkspace({
                   }
                 />
               ) : (
-                <div className="space-y-1 rounded-lg border border-border/50 bg-muted/[0.04] p-2 dark:bg-muted/10">
+                <div className="space-y-1 rounded-lg border border-border/50 bg-muted/20 p-2 dark:bg-muted/25">
                   {items.map((it) => (
                     <ItemRow
                       key={it.id}
@@ -676,7 +571,7 @@ function SalidaWorkspace({
                       showResult={isActiva || readOnly}
                       busy={busy}
                       onRemove={() => void removeItem(Number(it.id))}
-                      onToggleVendido={(v) => void toggleVendido(Number(it.id), v, it.precio_vendido ?? it.precio_snapshot)}
+                      onToggleVendido={(v) => void toggleVendido(Number(it.id), v, banquetaPrecioParaToggleVendido(it))}
                       onPriceChange={(v) => void setPrecio(Number(it.id), v)}
                     />
                   ))}
@@ -757,7 +652,9 @@ function SalidaCard({ salida, variant, onOpen, onDelete, onDeleteHistorial }) {
     <div
       className={cn(
         'group flex items-center gap-3 rounded-xl border transition-colors',
-        isActiva ? 'border-primary/25 bg-primary/[0.04] hover:bg-primary/[0.07]' : 'border-border/60 hover:bg-muted/45 dark:hover:bg-zinc-800/40',
+        isActiva
+          ? 'border-primary/25 bg-primary/[0.04] hover:bg-primary/[0.07]'
+          : 'border-border/60 hover:bg-muted/50 dark:hover:bg-muted/40',
         'px-4 py-3',
       )}
     >
@@ -771,7 +668,7 @@ function SalidaCard({ salida, variant, onOpen, onDelete, onDeleteHistorial }) {
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            {isActiva && <span className="text-[9.5px] uppercase tracking-widest font-medium text-primary">Activa</span>}
+            {isActiva && <span className="text-[9.5px] font-medium uppercase tracking-[0.12em] text-primary">Activa</span>}
             <p className={cn('text-[13px] font-medium truncate', isCerrada && 'text-muted-foreground')}>
               {salida.nombre || `Salida #${salida.id}`}
             </p>
@@ -831,6 +728,8 @@ export function BanquetaView() {
   const [printDetail, setPrintDetail] = useState(null)
   const [confirm, setConfirm] = useState(null)
   const [closeSummaryDetail, setCloseSummaryDetail] = useState(null)
+  const [estadoFilter, setEstadoFilter] = useState(null) // null | 'borrador' | 'activa' | 'cerrada'
+  const [q, setQ] = useState('')
 
   const loadSalidas = useCallback(async () => {
     if (!api?.listBanquetaSalidas || !api?.getActiveBanquetaSalida) { setSalidas([]); setActiveSalida(null); return }
@@ -920,8 +819,27 @@ export function BanquetaView() {
     catch (e) { toast.error(String(e?.message || e)) } finally { setBusy(false) }
   }
 
-  const borradores = salidas.filter((s) => String(s.estado || '').toLowerCase() === 'borrador')
-  const cerradas = salidas.filter((s) => String(s.estado || '').toLowerCase() === 'cerrada')
+  const qNorm = q.trim().toLowerCase()
+  const matchSearch = (s) => {
+    if (!qNorm) return true
+    const hay = `${s.nombre || ''} ${s.lugar || ''}`.toLowerCase()
+    return hay.includes(qNorm)
+  }
+  const activaFiltered = activeSalida && (estadoFilter == null || estadoFilter === 'activa') && matchSearch(activeSalida) ? activeSalida : null
+  const showBorradores = estadoFilter == null || estadoFilter === 'borrador'
+  const showCerradas = estadoFilter == null || estadoFilter === 'cerrada'
+  const borradores = showBorradores
+    ? salidas
+        .filter((s) => String(s.estado || '').toLowerCase() === 'borrador')
+        .filter(matchSearch)
+    : []
+  const cerradas = showCerradas
+    ? salidas
+        .filter((s) => String(s.estado || '').toLowerCase() === 'cerrada')
+        .filter(matchSearch)
+    : []
+  const hasFilters = estadoFilter != null || qNorm.length > 0
+  const clearFilters = () => { setEstadoFilter(null); setQ('') }
 
   return (
     <div data-app-workspace className="relative flex h-full flex-col overflow-hidden bg-background">
@@ -999,14 +917,65 @@ export function BanquetaView() {
         )}
         menuItems={
           hasDb
-            ? [{ id: 'refresh', label: 'Refrescar lista', icon: <RefreshCw className="size-3.5" strokeWidth={1.75} />, onClick: () => void loadSalidas() }]
+            ? [
+                ...(hasFilters
+                  ? [{ id: 'clear-filters', label: 'Vaciar filtros', icon: <FilterX className="size-3.5" strokeWidth={1.75} />, onClick: clearFilters }]
+                  : []),
+                {
+                  id: 'refresh',
+                  label: 'Refrescar lista',
+                  icon: <RefreshCw className="size-3.5" strokeWidth={1.75} />,
+                  onClick: () => void loadSalidas(),
+                  separatorBefore: hasFilters,
+                },
+              ]
             : []
         }
       />
       <PageHeaderDivider />
 
+      {hasDb ? (
+        <div className="relative flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/50 px-10 py-2 sm:flex-nowrap sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <ChipFilter
+                label="Estado"
+                options={[
+                  { value: 'activa', label: 'Activa' },
+                  { value: 'borrador', label: 'Borrador' },
+                  { value: 'cerrada', label: 'Historial' },
+                ]}
+                value={estadoFilter}
+                onChange={(v) => setEstadoFilter(v)}
+                placeholder="Todos"
+              />
+              {hasFilters ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <FilterX className="size-3" strokeWidth={1.75} />
+                  Vaciar
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex w-full min-w-0 shrink-0 items-center gap-3 sm:w-auto">
+            <span className="hidden h-4 w-px shrink-0 bg-border/60 sm:block" aria-hidden />
+            <SearchField
+              value={q}
+              onChange={setQ}
+              placeholder="Buscar por nombre o lugar…"
+              width="w-full sm:w-72"
+              className="min-w-0 flex-1 sm:flex-initial"
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto w-full max-w-2xl space-y-6 px-10 pb-10 pt-6">
+        <div className="mx-auto w-full max-w-2xl space-y-6 px-10 pb-10 pt-4 sm:pt-6">
           {!hasDb ? (
             <EmptyState
               icon={<Package className="size-6" strokeWidth={1.5} />}
@@ -1016,26 +985,26 @@ export function BanquetaView() {
             />
           ) : (
             <>
-              {activeSalida ? (
+              {activaFiltered ? (
                 <section className="space-y-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-primary/80">En curso</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">En curso</p>
                   <SalidaCard
-                    salida={activeSalida}
+                    salida={activaFiltered}
                     variant="activa"
-                    onOpen={() => setWorkspaceId(activeSalida.id)}
+                    onOpen={() => setWorkspaceId(activaFiltered.id)}
                   />
                 </section>
-              ) : (
+              ) : !hasFilters && !activeSalida ? (
                 <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-border/60 bg-muted/20 px-4 py-3 text-[12px] text-muted-foreground">
                   <Zap className="size-3.5 shrink-0 text-muted-foreground/80" strokeWidth={1.75} />
                   Sin salida activa. Creá un borrador, agregá prendas y activalo para imprimir la hoja.
                 </div>
-              )}
+              ) : null}
 
               {borradores.length > 0 && (
                 <section className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Borradores</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">Borradores</p>
                     <span className="text-[10px] text-muted-foreground/70 tabular-nums">{borradores.length}</span>
                   </div>
                   <div className="space-y-1.5">
@@ -1045,7 +1014,7 @@ export function BanquetaView() {
                         salida={s}
                         variant="borrador"
                         onOpen={() => setWorkspaceId(s.id)}
-                        onDelete={() => setConfirm({ type: 'delete', id: s.id })}
+                        onDelete={() => setConfirm({ mode: 'borrador', id: s.id })}
                       />
                     ))}
                   </div>
@@ -1055,7 +1024,7 @@ export function BanquetaView() {
               {cerradas.length > 0 && (
                 <section className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Historial</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">Historial</p>
                     <span className="text-[10px] text-muted-foreground/70 tabular-nums">{cerradas.length}</span>
                   </div>
                   <div className="space-y-1.5">
@@ -1072,7 +1041,7 @@ export function BanquetaView() {
                 </section>
               )}
 
-              {salidas.length === 0 && (
+              {salidas.length === 0 ? (
                 <EmptyState
                   icon={<Shirt className="size-6" strokeWidth={1.5} />}
                   title="Sin salidas todavía"
@@ -1088,7 +1057,24 @@ export function BanquetaView() {
                     </button>
                   )}
                 />
-              )}
+              ) : hasFilters && !activaFiltered && borradores.length === 0 && cerradas.length === 0 ? (
+                <EmptyState
+                  size="compact"
+                  icon={<Shirt className="size-5" strokeWidth={1.5} />}
+                  title="Sin resultados"
+                  description="Probá quitando filtros o ampliar la búsqueda."
+                  action={(
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 px-3 text-[12.5px] font-medium text-foreground/85 transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <FilterX className="size-3.5" strokeWidth={1.75} />
+                      Vaciar filtros
+                    </button>
+                  )}
+                />
+              ) : null}
             </>
           )}
         </div>

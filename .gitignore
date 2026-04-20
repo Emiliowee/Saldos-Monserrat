@@ -18,6 +18,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # SO / IDE
+.cursor/
 .DS_Store
 Thumbs.db
 .idea/

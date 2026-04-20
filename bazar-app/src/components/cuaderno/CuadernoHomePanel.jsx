@@ -1,5 +1,6 @@
-import { BookOpen, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { PageHeader, PageHeaderDivider, EmptyState } from '@/components/premium'
+import { InvRulesNotebookIcon } from '@/components/cuaderno/InvRulesNotebookIcon.jsx'
 import { cn } from '@/lib/utils'
 
 /**
@@ -9,7 +10,7 @@ export function CuadernoHomePanel({ loading, invRules, onNewRule, onOpenRule }) 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <PageHeader
-        icon={<BookOpen className="size-5" strokeWidth={1.5} />}
+        icon={<InvRulesNotebookIcon className="size-5" />}
         title="Reglas de inventario"
         description="Precios sugeridos según combinaciones de tags. El ancla define qué categoría fija la regla."
         count={invRules.length}
@@ -32,7 +33,7 @@ export function CuadernoHomePanel({ loading, invRules, onNewRule, onOpenRule }) 
         ) : invRules.length === 0 ? (
           <EmptyState
             size="compact"
-            icon={<BookOpen className="size-5" strokeWidth={1.5} />}
+            icon={<InvRulesNotebookIcon className="size-5" />}
             title="Aún no hay reglas"
             description="Creá una con «Nueva regla»: elegís un tag ancla y definís el precio de cada combinación de propiedades."
             action={

@@ -1,9 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import JsBarcode from 'jsbarcode'
 import { normalizeCode128Payload } from '@/lib/barcode128'
-import { blockTextForData, MM_PER_PT } from '@/lib/labelModel'
 import { localPathToFileUrl } from '@/lib/localFileUrl'
-
+import { blockTextForData, MM_PER_PT } from '@/lib/labelModel'
 /**
  * Renderiza una etiqueta a SVG a partir del template + datos.
  * - Coordenadas en mm (mismo sistema que el generador PDF).
@@ -22,6 +21,8 @@ export function LabelRender({
   onCanvasPointerDown = null,
   onBlockPointerDown = null,
   onResizeHandlePointerDown = null,
+  /** Doble clic en bloque «texto libre» → enfocar edición en el panel. */
+  onTextoLibreDoubleClick = null,
   showGrid = false,
 }) {
   const W = Number(template?.width_mm) || 60
@@ -77,6 +78,14 @@ export function LabelRender({
                   onBlockPointerDown?.(e, b)
                   onSelectBlock?.(b.id)
                 }}
+                onDoubleClick={
+                  interactive && b.type === 'texto_libre'
+                    ? (e) => {
+                        e.stopPropagation()
+                        onTextoLibreDoubleClick?.(b.id)
+                      }
+                    : undefined
+                }
                 style={{ cursor: isSel ? 'move' : 'pointer' }}
               />
             )}
@@ -161,6 +170,8 @@ function BlockRender({ block, data, opacity = 1 }) {
       )
     case 'logo':
       return <LogoBlock block={block} data={data} {...common} />
+    case 'imagen_fija':
+      return <FixedImageBlock block={block} {...common} />
     case 'precio':
       return <PrecioBlock block={block} data={data} {...common} />
     default:
@@ -202,20 +213,166 @@ function BarcodeBlock({ block, data, ...rest }) {
   )
 }
 
-function LogoBlock({ block, data, ...rest }) {
-  const path = String(data?.logoPath || '').trim()
-  if (!path) {
-    return (
-      <g {...rest}>
-        <rect x={block.x} y={block.y} width={block.w} height={block.h} fill="hsl(240 5% 96%)" stroke="hsl(240 4% 84%)" strokeWidth={0.15} vectorEffect="non-scaling-stroke" />
-        <text x={block.x + block.w / 2} y={block.y + block.h / 2} textAnchor="middle" dominantBaseline="central" fontSize={5 * MM_PER_PT} fontFamily="Helvetica, Arial, sans-serif" fill="#9ca3af">Logo</text>
-      </g>
-    )
-  }
-  const url = localPathToFileUrl(path)
+function logoPlaceholder(block, rest) {
   return (
     <g {...rest}>
-      <image href={url} x={block.x} y={block.y} width={block.w} height={block.h} preserveAspectRatio="xMidYMid meet" />
+      <rect x={block.x} y={block.y} width={block.w} height={block.h} fill="hsl(240 5% 96%)" stroke="hsl(240 4% 84%)" strokeWidth={0.15} vectorEffect="non-scaling-stroke" />
+      <text x={block.x + block.w / 2} y={block.y + block.h / 2} textAnchor="middle" dominantBaseline="central" fontSize={4.2 * MM_PER_PT} fontFamily="Helvetica, Arial, sans-serif" fill="#9ca3af">Avatar</text>
+    </g>
+  )
+}
+
+/**
+ * Origen: `data.logoPath` = avatar (`workspaceLogoPath`); vacío → main usa `branding/logo.jpg`.
+ * Siempre se pide `assets:logoDataUrl` en Electron (data URL); `<image>` en mm del viewBox.
+ * No usar `foreignObject` aquí: con viewBox en mm el HTML suele quedar a 0 px de alto.
+ */
+function LogoBlock({ block, data, ...rest }) {
+  const rawPath = String(data?.logoPath || '').trim()
+  const presetUrl = String(data?.logoDataUrl || '').trim()
+  const [href, setHref] = useState(() =>
+    presetUrl && (presetUrl.startsWith('data:') || presetUrl.startsWith('file:')) ? presetUrl : '',
+  )
+
+  const preserveAspectRatio =
+    String(block?.objectFit || 'contain').toLowerCase() === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'
+
+  useEffect(() => {
+    if (presetUrl && (presetUrl.startsWith('data:') || presetUrl.startsWith('file:'))) {
+      setHref(presetUrl)
+      return
+    }
+    let cancelled = false
+    const api = typeof window !== 'undefined' ? window.bazar?.assets?.logoDataUrl : null
+
+    const applyFileFallback = () => {
+      if (cancelled) return
+      const p = rawPath.trim()
+      if (!p) {
+        setHref('')
+        return
+      }
+      if (p.startsWith('file:')) setHref(p)
+      else setHref(localPathToFileUrl(p) || '')
+    }
+
+    if (api) {
+      void (async () => {
+        try {
+          const r = await api(rawPath)
+          if (cancelled) return
+          const du = r?.dataUrl
+          if (r?.ok && typeof du === 'string' && du.startsWith('data:')) {
+            setHref(du)
+            return
+          }
+          if (import.meta.env.DEV && r?.message) console.warn('[LabelRender] logoDataUrl:', r.message)
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('[LabelRender] logoDataUrl IPC', e)
+        }
+        applyFileFallback()
+      })()
+    } else {
+      applyFileFallback()
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [
+    rawPath,
+    presetUrl,
+    data?.labelLogoStyle,
+    data?.labelLogoWarmth,
+    data?.labelLogoContrast,
+    data?.labelLogoSaturation,
+  ])
+
+  if (!href) {
+    return logoPlaceholder(block, rest)
+  }
+
+  return (
+    <g {...rest}>
+      <image
+        href={href}
+        x={block.x}
+        y={block.y}
+        width={block.w}
+        height={block.h}
+        preserveAspectRatio={preserveAspectRatio}
+      />
+    </g>
+  )
+}
+
+function fixedImagePlaceholder(block, rest) {
+  return (
+    <g {...rest}>
+      <rect x={block.x} y={block.y} width={block.w} height={block.h} fill="hsl(240 5% 96%)" stroke="hsl(240 4% 84%)" strokeWidth={0.15} vectorEffect="non-scaling-stroke" />
+      <text x={block.x + block.w / 2} y={block.y + block.h / 2} textAnchor="middle" dominantBaseline="central" fontSize={3.8 * MM_PER_PT} fontFamily="Helvetica, Arial, sans-serif" fill="#9ca3af">Imagen</text>
+    </g>
+  )
+}
+
+/** PNG/JPG/WebP en disco (`imagePath`). Sin fallback a logo del espacio. */
+function FixedImageBlock({ block, ...rest }) {
+  const rawPath = String(block?.imagePath || '').trim()
+  const [href, setHref] = useState('')
+
+  const preserveAspectRatio =
+    String(block?.objectFit || 'contain').toLowerCase() === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'
+
+  useEffect(() => {
+    if (!rawPath) {
+      setHref('')
+      return
+    }
+    let cancelled = false
+    const api = typeof window !== 'undefined' ? window.bazar?.assets?.imageFileDataUrl : null
+
+    const applyFileFallback = () => {
+      if (cancelled) return
+      if (rawPath.startsWith('file:')) setHref(rawPath)
+      else setHref(localPathToFileUrl(rawPath) || '')
+    }
+
+    if (api) {
+      void (async () => {
+        try {
+          const r = await api(rawPath)
+          if (cancelled) return
+          const du = r?.dataUrl
+          if (r?.ok && typeof du === 'string' && du.startsWith('data:')) {
+            setHref(du)
+            return
+          }
+        } catch (e) {
+          if (import.meta.env.DEV) console.warn('[LabelRender] imageFileDataUrl', e)
+        }
+        applyFileFallback()
+      })()
+    } else {
+      applyFileFallback()
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [rawPath])
+
+  if (!href) {
+    return fixedImagePlaceholder(block, rest)
+  }
+
+  return (
+    <g {...rest}>
+      <image
+        href={href}
+        x={block.x}
+        y={block.y}
+        width={block.w}
+        height={block.h}
+        preserveAspectRatio={preserveAspectRatio}
+      />
     </g>
   )
 }
@@ -281,7 +438,8 @@ function TextBlock({ block, data, ...rest }) {
   if (align === 'center') ax = block.x + block.w / 2
   else if (align === 'right') ax = block.x + block.w - 0.5
 
-  const lineHeight = sizeMm * 1.15
+  const lhMult = Number.isFinite(Number(block.lineHeight)) ? Math.max(1, Number(block.lineHeight)) : 1.15
+  const lineHeight = sizeMm * lhMult
   const totalH = lines.length * lineHeight
   let ty = block.y + (block.h - totalH) / 2 + lineHeight * 0.78
 
@@ -298,7 +456,7 @@ function TextBlock({ block, data, ...rest }) {
           fill={color}
           textAnchor={anchor}
         >
-          {ln}
+          {ln === '' ? '\u00a0' : ln}
         </text>
       ))}
     </g>
@@ -311,10 +469,10 @@ function estimateCharsPerMm(widthMm, fontSizePt) {
   return Math.max(1, Math.floor(Number(widthMm) / charAdvanceMm))
 }
 
-function wrapText(text, maxChars, maxLines) {
-  const t = String(text || '').trim() || '—'
-  if (t === '—') return ['—']
-  const words = t.split(/\s+/)
+/** Parte un párrafo en líneas por ancho (caracteres aprox.). */
+function wrapParagraphWords(t, maxChars) {
+  const words = String(t || '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
   const out = []
   let cur = ''
   for (const w of words) {
@@ -326,5 +484,27 @@ function wrapText(text, maxChars, maxLines) {
     }
   }
   if (cur) out.push(cur)
-  return out.slice(0, Math.max(1, maxLines))
+  return out
+}
+
+function wrapText(text, maxChars, maxLines) {
+  const raw = String(text ?? '')
+  const trimmed = raw.trim()
+  if (!trimmed) return ['']
+  const parts = raw.split(/\n/)
+  const out = []
+  for (let pi = 0; pi < parts.length; pi++) {
+    const para = parts[pi]
+    if (para === '' && pi > 0) {
+      out.push('')
+      if (out.length >= maxLines) return out
+      continue
+    }
+    const wrapped = wrapParagraphWords(para, maxChars)
+    for (const ln of wrapped) {
+      out.push(ln)
+      if (out.length >= maxLines) return out
+    }
+  }
+  return out.length ? out : ['']
 }

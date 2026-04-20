@@ -103,9 +103,14 @@ export function PriceAdjustDialog({ open, onClose, onApplied, initialTagsByGroup
     else adjustValue = parseDecimalInput(fixedPrice)
     if (adjustValue == null) { toast.error('Valor inválido'); return }
 
+    const dbApply = window.bazar?.db?.applyPriceAdjust
+    if (!dbApply) {
+      toast.error('Base de datos no disponible.')
+      return
+    }
     setBusy(true)
     try {
-      await window.bazar.db.applyPriceAdjust({ tagOptionIds, matchExact, adjustMode: adjustMode === 'sum' ? 'sum' : adjustMode === 'fixed' ? 'fixed' : 'pct', adjustValue, sumSign, roundMode })
+      await dbApply({ tagOptionIds, matchExact, adjustMode: adjustMode === 'sum' ? 'sum' : adjustMode === 'fixed' ? 'fixed' : 'pct', adjustValue, sumSign, roundMode })
       toast.success(`Se actualizaron ${preview.total} precio(s)`)
       onApplied?.(); onClose(); setPreview(null); setStep(0)
     } catch (e) { toast.error(String(e.message || e)) }

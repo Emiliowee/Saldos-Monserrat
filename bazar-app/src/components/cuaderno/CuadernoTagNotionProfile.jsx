@@ -1,4 +1,4 @@
-import { Eye, Folder, Link2, Tag as TagIcon, Trash2 } from 'lucide-react'
+import { Eye, Folder, Link2, Loader2, Tag as TagIcon, Trash2 } from 'lucide-react'
 import { PropertyIconPickerButton } from '@/components/properties/PropertyPickers.jsx'
 import { notionCoverBannerClasses } from '@/lib/propertyTokens'
 import { cn } from '@/lib/utils'
@@ -20,29 +20,34 @@ export function CuadernoTagNotionProfile({
   siblingRows = [],
   onSiblingClick,
   onSave,
+  isSaving = false,
   onClose,
   onDelete,
 }) {
+  const MAX_SIBLINGS = 14
+  const visibleSiblings = siblingRows.slice(0, MAX_SIBLINGS)
+  const hiddenSiblingCount = Math.max(0, siblingRows.length - MAX_SIBLINGS)
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div
           className={cn(
-            'relative z-0 h-[6.5rem] w-full overflow-hidden sm:h-[7rem]',
+            'relative z-0 h-[4rem] w-full overflow-hidden sm:h-[4.25rem]',
             notionCoverBannerClasses('gray'),
           )}
           aria-hidden
         />
 
         <div className="relative z-10 mx-auto w-full max-w-[720px] px-6 pb-10 pt-0 sm:px-12">
-          <div className="-mt-11 flex flex-col items-start sm:-mt-[3.25rem]">
+          <div className="-mt-8 flex flex-col items-start sm:-mt-9">
             <PropertyIconPickerButton
               value={icon}
               onChange={onIconChange}
               title="Cambiar icono"
               appearance="hero"
-              triggerClassName="h-[5rem] w-[5rem] drop-shadow-sm sm:h-[5.5rem] sm:w-[5.5rem]"
-              glyphClassName="!size-[5rem] sm:!size-[5.5rem]"
+              triggerClassName="h-[4.25rem] w-[4.25rem] drop-shadow-sm sm:h-[4.5rem] sm:w-[4.5rem]"
+              glyphClassName="!size-[4.25rem] sm:!size-[4.5rem]"
             />
 
             <div className="group/title mt-3 w-full rounded-md px-0 transition-colors hover:bg-muted/45">
@@ -107,7 +112,7 @@ export function CuadernoTagNotionProfile({
             <div className="mt-3">
               {siblingRows.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {siblingRows.map((row) => (
+                  {visibleSiblings.map((row) => (
                     <button
                       key={row.id}
                       type="button"
@@ -118,6 +123,11 @@ export function CuadernoTagNotionProfile({
                       <span className="truncate">{row.name}</span>
                     </button>
                   ))}
+                  {hiddenSiblingCount > 0 ? (
+                    <span className="inline-flex items-center rounded-md border border-dashed border-border/60 px-2 py-1 text-[11px] text-muted-foreground">
+                      Ver todas (+{hiddenSiblingCount})
+                    </span>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-[12.5px] text-muted-foreground">Es la única etiqueta del grupo.</p>
@@ -142,8 +152,15 @@ export function CuadernoTagNotionProfile({
           <Button type="button" variant="outline" size="sm" className="h-8 text-[12px]" onClick={onClose}>
             Cerrar
           </Button>
-          <Button type="button" size="sm" className="h-8 text-[12px]" onClick={onSave}>
-            Guardar cambios
+          <Button type="button" size="sm" className="h-8 text-[12px]" disabled={isSaving} onClick={onSave}>
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-1 size-3.5 shrink-0 animate-spin" strokeWidth={1.75} aria-hidden />
+                Guardando…
+              </>
+            ) : (
+              'Guardar cambios'
+            )}
           </Button>
         </div>
       </div>

@@ -92,19 +92,27 @@ export function AppCommandMenu({ open, onOpenChange, currentSection, onNavigate 
   }
 
   const pickProduct = (row) => {
-    if (row?.id != null) {
-      try {
-        sessionStorage.setItem('bazar.inventoryOpenProductId', String(row.id))
-      } catch { /* noop */ }
-    }
+    const pid = row?.id
     void onNavigate('inventario')
     onOpenChange(false)
+    queueMicrotask(() => {
+      if (pid != null) {
+        window.dispatchEvent(new CustomEvent('bazar:inventory-open-product', { detail: pid }))
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.querySelector('input[data-inventory-search]')?.focus?.({ preventScroll: true })
+        })
+      })
+    })
   }
 
   const quickAction = (action) => {
     onOpenChange(false)
     if (action === 'new-product') {
-      sessionStorage.setItem('bazar.inventoryNewProduct', '1')
+      try {
+        sessionStorage.setItem('bazar.inventoryNewProduct', '1')
+      } catch { /* noop */ }
       void onNavigate('inventario')
     } else if (action === 'open-pos') {
       void onNavigate('pdv')

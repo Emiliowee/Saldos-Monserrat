@@ -5,6 +5,7 @@ import {
   Plus,
   ArrowDownLeft,
   ArrowUpRight,
+  ChevronLeft,
   Phone,
   StickyNote,
   X,
@@ -290,9 +291,33 @@ export function CreditosView() {
   }, [])
 
   useEffect(() => {
-    if (selectedId) void loadMov(selectedId)
-    else setMovimientos([])
-  }, [selectedId, loadMov])
+    if (!selectedId) {
+      setMovimientos([])
+      setMovLoading(false)
+      return
+    }
+    let cancelled = false
+    setMovLoading(true)
+    const d = db()
+    if (!d?.getCreditoMovimientos) {
+      setMovimientos([])
+      setMovLoading(false)
+      return
+    }
+    d.getCreditoMovimientos({ clienteId: selectedId })
+      .then((list) => {
+        if (!cancelled) setMovimientos(Array.isArray(list) ? list : [])
+      })
+      .catch(() => {
+        if (!cancelled) setMovimientos([])
+      })
+      .finally(() => {
+        if (!cancelled) setMovLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId])
 
   const filtered = useMemo(() => {
     let list = clientes
@@ -465,13 +490,21 @@ export function CreditosView() {
               className="py-16"
             />
           ) : !selected ? (
-            <EmptyState
-              icon={<Wallet className="size-6" strokeWidth={1.5} />}
-              title="Elegí un cliente"
-              description="Seleccioná un nombre en la lista para ver el saldo y el historial de movimientos."
-              size="compact"
-              className="py-16"
-            />
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-8 py-12">
+              <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/25 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+                  <ChevronLeft className="size-3.5 shrink-0 opacity-80" strokeWidth={2} aria-hidden />
+                  Lista a la izquierda
+                </span>
+                <EmptyState
+                  icon={<Wallet className="size-6" strokeWidth={1.5} />}
+                  title="Elegí un cliente"
+                  description="Seleccioná un nombre en la columna de la izquierda para ver el saldo y el historial de movimientos."
+                  size="compact"
+                  className="py-0"
+                />
+              </div>
+            </div>
           ) : (
             <>
               <div className="shrink-0 space-y-3 border-b border-border/50 px-10 py-4">

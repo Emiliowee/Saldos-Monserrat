@@ -18,7 +18,7 @@ import {
  * @param {import('react').ReactNode} [p.description]
  * @param {number | string} [p.count] — contador pequeño junto al título
  * @param {import('react').ReactNode} [p.actions] — botones primarios/secundarios a la derecha
- * @param {Array<{ id: string, label: string, icon?: import('react').ReactNode, onClick: () => void, destructive?: boolean, separatorBefore?: boolean }>} [p.menuItems]
+ * @param {Array<{ id: string, label: string, icon?: import('react').ReactNode, onClick: () => void, destructive?: boolean, separatorBefore?: boolean, disabled?: boolean }>} [p.menuItems]
  * @param {{ label: string, onClick: () => void }} [p.back] — breadcrumb "← etiqueta" antes del título
  * @param {string} [p.className]
  */
@@ -30,7 +30,7 @@ export function PageHeader({ icon, title, description, count, actions, menuItems
         <button
           type="button"
           onClick={back.onClick}
-          className="group mb-4 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[12px] font-medium text-muted-foreground/75 transition-colors hover:bg-[#f1f0ef] hover:text-foreground/85 dark:hover:bg-zinc-800/70"
+          className="group mb-4 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[12px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/70 hover:text-foreground dark:hover:bg-muted/55"
         >
           <ChevronLeft className="size-3.5 opacity-70" strokeWidth={1.75} />
           <span className="tracking-[-0.005em]">{back.label}</span>
@@ -41,7 +41,7 @@ export function PageHeader({ icon, title, description, count, actions, menuItems
         <div className="flex min-w-0 flex-1 items-start gap-3">
           {icon ? (
             <span
-              className="mt-1 inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/30 text-foreground/80 dark:bg-zinc-800/50"
+              className="mt-1 inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/30 text-foreground/80 dark:bg-muted/50"
               aria-hidden
             >
               {icon}
@@ -70,7 +70,7 @@ export function PageHeader({ icon, title, description, count, actions, menuItems
             {hasMenu ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[#f1f0ef] hover:text-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 dark:hover:bg-zinc-800/70"
+                  className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 dark:hover:bg-muted/55"
                   aria-label="Más opciones"
                 >
                   <MoreHorizontal className="size-4" strokeWidth={1.75} />
@@ -82,7 +82,8 @@ export function PageHeader({ icon, title, description, count, actions, menuItems
                       <DropdownMenuItem
                         inset={false}
                         variant={mi.destructive ? 'destructive' : 'default'}
-                        onClick={mi.onClick}
+                        disabled={Boolean(mi.disabled)}
+                        onClick={mi.disabled ? undefined : mi.onClick}
                         className="gap-2.5 py-1.5 text-[12.5px]"
                       >
                         {mi.icon ? <span className="text-muted-foreground/70">{mi.icon}</span> : null}

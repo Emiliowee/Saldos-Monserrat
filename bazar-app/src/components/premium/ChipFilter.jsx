@@ -24,7 +24,7 @@ export function ChipFilter({ label, options, value, onChange, allowClear = true,
           'group inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium leading-none tracking-[-0.003em] transition-[background-color,border-color,color] duration-120',
           active
             ? 'border-primary/25 bg-primary/[0.05] text-foreground hover:bg-primary/[0.085]'
-            : 'border-border/70 bg-transparent text-muted-foreground/85 hover:border-border hover:bg-[#f3f3f2] hover:text-foreground/85 dark:hover:bg-zinc-800/60',
+            : 'border-border/70 bg-transparent text-muted-foreground/85 hover:border-border hover:bg-muted/70 hover:text-foreground/85 dark:hover:bg-muted/55',
         )}
       >
         <span className="shrink-0 text-muted-foreground/70 group-hover:text-muted-foreground">
@@ -62,8 +62,8 @@ export function ChipFilter({ label, options, value, onChange, allowClear = true,
                 onClick={() => onChange(o.value)}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12.5px] transition-colors',
-                  'hover:bg-[#f1f0ef] dark:hover:bg-zinc-800/70',
-                  isSel && 'bg-[#f1f0ef] dark:bg-zinc-800/60',
+                  'hover:bg-muted/70 dark:hover:bg-muted/55',
+                  isSel && 'bg-muted dark:bg-muted/70',
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-foreground/90">{o.label}</span>

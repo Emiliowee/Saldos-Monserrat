@@ -9,10 +9,8 @@ import { cn } from '@/lib/utils'
 
 export function ReferenceDetailModal({ open, onClose, resumenRows, patrones, cuaderno, tagLines }) {
   const [sub, setSub] = useState('patrones')
-  const [mounted, setMounted] = useState(false)
   const reduceMotion = useReducedMotion()
 
-  useEffect(() => { setMounted(true) }, [])
   useEffect(() => { if (open) setSub('patrones') }, [open])
   useEffect(() => {
     if (!open) return
@@ -21,7 +19,7 @@ export function ReferenceDetailModal({ open, onClose, resumenRows, patrones, cua
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  if (!mounted || typeof document === 'undefined') return null
+  if (typeof document === 'undefined') return null
 
   const stats = patrones?.stats
 

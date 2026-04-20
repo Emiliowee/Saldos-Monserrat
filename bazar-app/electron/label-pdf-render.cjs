@@ -12,8 +12,11 @@
 
 const fs = require('fs')
 const path = require('path')
+const { fileURLToPath } = require('node:url')
+const { nativeImage } = require('electron')
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const { mmToPt, blockTextForData } = require('./label-model.cjs')
+const { applyLabelLogoStyle } = require('./label-logo-raster.cjs')
 
 function getBwipJs() {
   try {
@@ -47,15 +50,9 @@ function normalizeCode128Payload(raw) {
   return s.slice(0, 64)
 }
 
-/**
- * Parte el texto en líneas respetando maxLen (en caracteres) y maxLines.
- * Si la línea no cabe, corta con ellipsis. (Nota: maxLen es aproximado porque
- * se usa sin medición real; para el preview SVG alcanza.)
- */
-function wrapLines(text, maxLen, maxLines) {
-  const t = String(text || '').trim() || '—'
-  if (t === '—') return ['—']
-  const words = t.split(/\s+/)
+function wrapParagraphWords(t, maxLen) {
+  const words = String(t || '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
   const out = []
   let cur = ''
   for (const w of words) {
@@ -67,7 +64,32 @@ function wrapLines(text, maxLen, maxLines) {
     }
   }
   if (cur) out.push(cur)
-  return out.slice(0, Math.max(1, maxLines || 1))
+  return out
+}
+
+/**
+ * Parte el texto en líneas (incluye saltos \n); respeta maxLines total.
+ */
+function wrapLines(text, maxLen, maxLines) {
+  const raw = String(text ?? '')
+  const trimmed = raw.trim()
+  if (!trimmed) return ['—']
+  const parts = raw.split(/\n/)
+  const out = []
+  for (let pi = 0; pi < parts.length; pi++) {
+    const para = parts[pi]
+    if (para === '' && pi > 0) {
+      out.push('')
+      if (out.length >= maxLines) return out
+      continue
+    }
+    const wrapped = wrapParagraphWords(para, maxLen)
+    for (const ln of wrapped) {
+      out.push(ln)
+      if (out.length >= maxLines) return out
+    }
+  }
+  return out.length ? out : ['—']
 }
 
 /**
@@ -78,6 +100,46 @@ function estimateMaxChars(widthMm, fontSizePt) {
   const widthPt = mmToPt(widthMm)
   const avg = Math.max(1, 0.55 * fontSizePt)
   return Math.max(1, Math.floor(widthPt / avg))
+}
+
+function logoPathToFs(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return ''
+  if (s.startsWith('file:')) {
+    try {
+      return fileURLToPath(s)
+    } catch {
+      return s
+    }
+  }
+  return s
+}
+
+function resolveBrandingLogoFsPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'public', 'branding', 'logo.jpg'),
+    path.join(__dirname, '..', 'dist', 'branding', 'logo.jpg'),
+  ]
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) return p
+    } catch {
+      /* noop */
+    }
+  }
+  return ''
+}
+
+function effectiveLogoFsPathForPdf(rawFromData) {
+  const u = logoPathToFs(String(rawFromData ?? '').trim())
+  if (u) {
+    try {
+      if (fs.existsSync(u) && fs.statSync(u).isFile()) return u
+    } catch {
+      /* noop */
+    }
+  }
+  return resolveBrandingLogoFsPath()
 }
 
 /**
@@ -167,18 +229,40 @@ async function renderLabelPdf(outPath, template, data) {
         continue
       }
 
-      if (block.type === 'logo' && data?.logoPath) {
+      if (block.type === 'logo') {
         try {
-          const raw = fs.readFileSync(data.logoPath)
+          const fsPath = effectiveLogoFsPathForPdf(data?.logoPath)
+          if (!fsPath) continue
           let img
-          try {
-            img = await pdf.embedPng(raw)
-          } catch {
-            img = await pdf.embedJpg(raw)
+          const ni = nativeImage.createFromPath(fsPath)
+          if (!ni.isEmpty()) {
+            const styled = applyLabelLogoStyle(ni, {
+              style: data?.labelLogoStyle,
+              warmth: data?.labelLogoWarmth,
+              contrast: data?.labelLogoContrast,
+              saturation: data?.labelLogoSaturation,
+            })
+            const pngBuf = styled.toPNG()
+            img = await pdf.embedPng(Buffer.isBuffer(pngBuf) ? pngBuf : Buffer.from(pngBuf))
+          } else {
+            const raw = fs.readFileSync(fsPath)
+            try {
+              img = await pdf.embedPng(raw)
+            } catch {
+              img = await pdf.embedJpg(raw)
+            }
           }
-          const scale = Math.min(w / img.width, h / img.height)
-          const dw = img.width * scale
-          const dh = img.height * scale
+          const iw = Number(img?.width) || 0
+          const ih = Number(img?.height) || 0
+          if (iw <= 0 || ih <= 0) continue
+          const fit = String(block.objectFit || 'contain').toLowerCase()
+          const scale =
+            fit === 'cover'
+              ? Math.max(w / iw, h / ih)
+              : Math.min(w / iw, h / ih)
+          const dw = iw * scale
+          const dh = ih * scale
+          if (!Number.isFinite(dw) || !Number.isFinite(dh) || dw <= 0 || dh <= 0) continue
           page.drawImage(img, {
             x: x + (w - dw) / 2,
             y: yBottom + (h - dh) / 2,
@@ -187,6 +271,49 @@ async function renderLabelPdf(outPath, template, data) {
           })
         } catch (err) {
           console.error('[label-pdf-render] logo:', err)
+        }
+        continue
+      }
+
+      if (block.type === 'imagen_fija') {
+        try {
+          const fsPath = logoPathToFs(String(block.imagePath || '').trim())
+          if (!fsPath) continue
+          try {
+            if (!fs.existsSync(fsPath) || !fs.statSync(fsPath).isFile()) continue
+          } catch {
+            continue
+          }
+          const raw = fs.readFileSync(fsPath)
+          let img
+          try {
+            img = await pdf.embedPng(raw)
+          } catch {
+            try {
+              img = await pdf.embedJpg(raw)
+            } catch {
+              continue
+            }
+          }
+          const iw = Number(img?.width) || 0
+          const ih = Number(img?.height) || 0
+          if (iw <= 0 || ih <= 0) continue
+          const fit = String(block.objectFit || 'contain').toLowerCase()
+          const scale =
+            fit === 'cover'
+              ? Math.max(w / iw, h / ih)
+              : Math.min(w / iw, h / ih)
+          const dw = iw * scale
+          const dh = ih * scale
+          if (!Number.isFinite(dw) || !Number.isFinite(dh) || dw <= 0 || dh <= 0) continue
+          page.drawImage(img, {
+            x: x + (w - dw) / 2,
+            y: yBottom + (h - dh) / 2,
+            width: dw,
+            height: dh,
+          })
+        } catch (err) {
+          console.error('[label-pdf-render] imagen_fija:', err)
         }
         continue
       }
@@ -216,16 +343,19 @@ async function renderLabelPdf(outPath, template, data) {
       const maxLines = Math.max(1, Number(block.maxLines) || 1)
       const approxPerLine = estimateMaxChars(Math.max(1, Number(block.w) || 10), fontSizePt)
       const lines = wrapLines(text, approxPerLine, maxLines)
-      const lineGap = Math.round(fontSizePt * 0.25 * 100) / 100
-      const totalH = lines.length * fontSizePt + (lines.length - 1) * lineGap
-      let ty = yBottom + h - (h - totalH) / 2 - fontSizePt
+      const lhMult = Number.isFinite(Number(block.lineHeight)) ? Math.max(1, Number(block.lineHeight)) : 1.15
+      const lineStep = fontSizePt * lhMult
+      const totalH = (lines.length - 1) * lineStep + fontSizePt
+      let ty = yBottom + h - (h - totalH) / 2 - fontSizePt * 0.85
       for (const line of lines) {
-        const lw = font.widthOfTextAtSize(line, fontSizePt)
-        let lx = x + 2
-        if (block.align === 'center') lx = x + (w - lw) / 2
-        else if (block.align === 'right') lx = x + w - lw - 2
-        page.drawText(line, { x: lx, y: ty, size: fontSizePt, font, color })
-        ty -= fontSizePt + lineGap
+        if (line !== '') {
+          const lw = font.widthOfTextAtSize(line, fontSizePt)
+          let lx = x + 2
+          if (block.align === 'center') lx = x + (w - lw) / 2
+          else if (block.align === 'right') lx = x + w - lw - 2
+          page.drawText(line, { x: lx, y: ty, size: fontSizePt, font, color })
+        }
+        ty -= lineStep
       }
     } catch (err) {
       console.error('[label-pdf-render] bloque', block.type, err)

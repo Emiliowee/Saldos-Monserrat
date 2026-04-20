@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Package,
   Wallet,
   MapPin,
   ShoppingCart,
-  ExternalLink,
-  Sparkles,
   BookOpen,
+  Printer,
+  ArrowUpRight,
+  Plus,
+  Tag,
+  ScanLine,
+  Settings,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
-import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MONTHS = [
@@ -18,17 +22,24 @@ const MONTHS = [
 ]
 
 const MODULES = [
-  { id: 'inventario', label: 'Inventario',  desc: 'Alta, etiquetas y stock',       Icon: Package,   kbd: 'F2' },
-  { id: 'cuaderno',   label: 'Cuaderno',    desc: 'Reglas de precio y categorías', Icon: BookOpen,  kbd: null },
-  { id: 'creditos',   label: 'Créditos',    desc: 'Clientes y saldos',            Icon: Wallet,    kbd: 'F3' },
-  { id: 'banqueta',   label: 'Banqueta',    desc: 'Mostrador y ferias',           Icon: MapPin,    kbd: 'F4' },
+  { id: 'inventario', label: 'Inventario', desc: 'Alta, etiquetas y stock', Icon: Package, kbd: 'F2' },
+  { id: 'cuaderno', label: 'Cuaderno', desc: 'Reglas de precio y categorías', Icon: BookOpen },
+  { id: 'creditos', label: 'Créditos', desc: 'Clientes y saldos', Icon: Wallet, kbd: 'F3' },
+  { id: 'banqueta', label: 'Banqueta', desc: 'Mostrador y ferias', Icon: MapPin, kbd: 'F4' },
 ]
 
 export function HomeView() {
   const { setSection } = useAppStore()
   const [snap, setSnap] = useState(null)
-  const now = new Date()
+  const [clockTick, setClockTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((n) => n + 1), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+  const now = useMemo(() => new Date(), [clockTick])
   const dateLine = `${DAYS[now.getDay()]}, ${now.getDate()} de ${MONTHS[now.getMonth()]}`
+  const hour = now.getHours()
+  const greeting = hour < 6 ? 'Buenas noches' : hour < 13 ? 'Buenos días' : hour < 20 ? 'Buenas tardes' : 'Buenas noches'
 
   useEffect(() => {
     const fn = window.bazar?.db?.getWelcomeSnapshot
@@ -42,106 +53,197 @@ export function HomeView() {
     setSection('pdv')
   }
 
+  const openDevices = () => {
+    const p = window.bazar?.devices?.open?.()
+    if (p && typeof p.then === 'function') { p.catch(() => { window.location.hash = '#devices' }); return }
+    window.location.hash = '#devices'
+  }
+
+  const productosTotal = Number(snap?.productosTotal ?? 0)
+  const disponibles = Number(snap?.productosDisponibles ?? 0)
+  const ocupados = Math.max(0, productosTotal - disponibles)
+  const credito = Number(snap?.saldoTotalPendiente ?? 0)
+  const clientesConSaldo = Number(snap?.clientesConSaldo ?? 0)
+
+  const newInventoryItem = () => {
+    try {
+      sessionStorage.setItem('bazar.inventoryNewProduct', '1')
+    } catch { /* noop */ }
+    setSection('inventario')
+  }
+  const newBanquetaSalida = () => {
+    try { sessionStorage.setItem('bazar.banquetaNewSalida', '1') } catch { /* noop */ }
+    setSection('banqueta')
+  }
+
   return (
-    <div className="relative flex h-full items-start justify-center overflow-auto">
-      <div className="relative z-[1] w-full max-w-lg px-8 py-12 space-y-10">
-        <header className="space-y-3">
-          <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-muted-foreground">{dateLine}</p>
-          <div className="space-y-1">
-            <h1 className="text-[22px] font-semibold tracking-[-0.03em] text-foreground">
-              <span className="bazar-wordmark-coral">Bazar</span>{' '}
-              <span className="font-normal text-muted-foreground">Monserrat</span>
-            </h1>
-            <p className="flex items-center gap-2 text-[12.5px] leading-relaxed text-muted-foreground">
-              <Sparkles className="size-3.5 shrink-0 text-primary" strokeWidth={1.5} />
-              Inventario, precios y caja — un solo lugar, pensado para el mostrador real.
-            </p>
-          </div>
+    <div data-app-workspace className="relative flex h-full flex-col overflow-auto bg-background">
+      <div className="mx-auto w-full max-w-[880px] px-10 pb-16 pt-14">
+        <header className="space-y-2.5">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.22em] text-muted-foreground/80">
+            {dateLine}
+          </p>
+          <h1 className="text-[32px] font-semibold leading-[1.1] tracking-[-0.028em] text-foreground">
+            {greeting},{' '}
+            <span className="text-muted-foreground/65 font-normal">bienvenida a</span>{' '}
+            <span className="bazar-wordmark-coral">Bazar Monserrat</span>
+          </h1>
+          <p className="max-w-[58ch] text-[13.5px] leading-relaxed text-muted-foreground/80">
+            Inventario, precios y caja en un solo workspace. Elegí un módulo o abrí el punto de venta.
+          </p>
         </header>
 
-        {snap && (
-          <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3 rounded-2xl border border-primary/10 bg-card/80 px-5 py-4 shadow-sm backdrop-blur-sm">
-            <div>
-              <p className="text-[24px] font-semibold tabular-nums tracking-tight text-foreground">{snap.productosDisponibles}</p>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Disponibles</p>
-            </div>
-            <div className="hidden h-10 w-px bg-border sm:block" />
-            <div>
-              <p className="text-[24px] font-semibold tabular-nums tracking-tight text-foreground">{snap.productosTotal - snap.productosDisponibles}</p>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Banqueta / vendidos</p>
-            </div>
-            {snap.clientesConSaldo > 0 && (
-              <>
-                <div className="hidden h-10 w-px bg-border sm:block" />
-                <div>
-                  <p className="text-[24px] font-semibold tabular-nums tracking-tight text-primary">
-                    ${Number(snap.saldoTotalPendiente || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
-                  </p>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Crédito ({snap.clientesConSaldo})</p>
-                </div>
-              </>
-            )}
+        <section className="mt-10">
+          <div className="flex items-end justify-between gap-4 pb-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/75">
+              Resumen
+            </h2>
+            <button
+              type="button"
+              onClick={() => setSection('inventario')}
+              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground/75 transition-colors hover:text-foreground"
+            >
+              Abrir inventario
+              <ArrowUpRight className="size-3" strokeWidth={1.75} />
+            </button>
           </div>
-        )}
+          <div className="grid grid-cols-2 gap-0 overflow-hidden rounded-xl border border-border/60 sm:grid-cols-4 divide-x divide-y divide-border/60">
+            <StatCell label="Disponibles" value={disponibles} />
+            <StatCell label="En banqueta / vendidos" value={ocupados} muted />
+            <StatCell label="Total artículos" value={productosTotal} muted />
+            <StatCell
+              label={clientesConSaldo ? `Crédito · ${clientesConSaldo} cte.` : 'Crédito'}
+              value={credito}
+              money
+              accent={credito > 0}
+            />
+          </div>
+        </section>
 
-        <div className="space-y-3">
-          <Button
-            size="lg"
-            className="h-12 w-full gap-2.5 rounded-xl text-[13px] font-medium shadow-md shadow-primary/20 transition-all hover:shadow-lg hover:shadow-primary/25"
+        <section className="mt-10">
+          <div className="flex items-end justify-between gap-4 pb-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/75">
+              Acciones rápidas
+            </h2>
+          </div>
+
+          <button
+            type="button"
             onClick={openPdv}
+            className="group mb-2 flex w-full items-center gap-3 rounded-xl border border-foreground/15 bg-foreground px-4 py-3 text-background transition-colors hover:bg-foreground/92 dark:bg-foreground/92"
           >
-            <ShoppingCart className="size-4" strokeWidth={1.75} />
-            Abrir punto de venta
-            <ExternalLink className="size-3.5 opacity-80" strokeWidth={1.5} />
-          </Button>
-          <p className="text-center text-[10px] text-muted-foreground">Ventana aparte · misma base de datos</p>
-        </div>
+            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-background/10">
+              <ShoppingCart className="size-4" strokeWidth={1.75} />
+            </span>
+            <span className="flex-1 text-left">
+              <span className="block text-[13px] font-medium leading-tight">Abrir punto de venta</span>
+              <span className="mt-0.5 block text-[11px] leading-tight text-background/75">
+                Ventana aparte · misma base de datos
+              </span>
+            </span>
+            <ArrowUpRight className="size-4 opacity-70 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" strokeWidth={1.75} />
+          </button>
 
-        <div className="space-y-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Módulos</p>
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <QuickAction Icon={Plus} label="Nuevo artículo" hint="Agregar inventario" onClick={newInventoryItem} />
+            <QuickAction Icon={ScanLine} label="Nueva salida banqueta" hint="Planificar feria" onClick={newBanquetaSalida} />
+            <QuickAction Icon={Printer} label="Dispositivos" hint="Scanner · impresora" onClick={openDevices} />
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <div className="flex items-end justify-between gap-4 pb-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/75">
+              Módulos
+            </h2>
+            <button
+              type="button"
+              onClick={() => setSection('config')}
+              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground/75 transition-colors hover:text-foreground"
+            >
+              <Settings className="size-3" strokeWidth={1.75} />
+              Configuración
+            </button>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {MODULES.map(({ id, label, desc, Icon, kbd }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setSection(id)}
-                className="group flex items-start gap-3 rounded-xl border border-primary/10 bg-card/70 p-3.5 text-left shadow-sm backdrop-blur-sm transition-all hover:border-primary/25 hover:bg-card hover:shadow-md"
+                className="group flex items-center gap-3 rounded-xl border border-border/60 bg-background px-4 py-3 text-left transition-colors hover:border-border hover:bg-muted/35 dark:hover:bg-zinc-900/40"
               >
-                <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary transition-colors group-hover:bg-primary/18">
-                  <Icon className="size-[17px]" strokeWidth={1.65} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12.5px] font-medium text-foreground">{label}</span>
-                    {kbd && (
-                      <kbd className="hidden h-[14px] items-center rounded border border-primary/15 bg-primary/[0.06] px-1 font-mono text-[8px] text-muted-foreground sm:inline-flex">{kbd}</kbd>
-                    )}
-                  </div>
-                  <p className="text-[11px] leading-snug text-muted-foreground">{desc}</p>
-                </div>
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/30 text-foreground/80 transition-colors group-hover:bg-muted/60 dark:bg-zinc-800/50">
+                  <Icon className="size-[17px]" strokeWidth={1.5} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-[13.5px] font-medium leading-tight tracking-[-0.005em] text-foreground">
+                      {label}
+                    </span>
+                    {kbd ? (
+                      <kbd className="inline-flex h-[15px] items-center rounded-sm border border-border/70 bg-muted/20 px-1 font-mono text-[9px] text-muted-foreground/80">
+                        {kbd}
+                      </kbd>
+                    ) : null}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11.5px] leading-snug text-muted-foreground/80">
+                    {desc}
+                  </span>
+                </span>
+                <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground/80" strokeWidth={1.75} />
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="flex flex-wrap items-center justify-center gap-4 border-t border-primary/10 pt-8 text-[11px] text-muted-foreground">
-          <button
-            type="button"
-            className="transition-colors hover:text-primary underline-offset-2 hover:underline"
-            onClick={() => {
-              const p = window.bazar?.devices?.open?.()
-              if (p && typeof p.then === 'function') { p.catch(() => { window.location.hash = '#devices' }); return }
-              window.location.hash = '#devices'
-            }}
-          >
-            Dispositivos
-          </button>
-          <span className="text-primary/30">·</span>
-          <button type="button" className="transition-colors hover:text-primary underline-offset-2 hover:underline" onClick={() => setSection('config')}>
-            Configuración
-          </button>
-        </div>
+        <footer className="mt-14 flex items-center justify-between border-t border-border/50 pt-5 text-[11px] text-muted-foreground/65">
+          <span className="inline-flex items-center gap-1.5">
+            <Tag className="size-3" strokeWidth={1.5} />
+            Saldos Monserrat · workspace local
+          </span>
+          <span className="tabular-nums">v1.0</span>
+        </footer>
       </div>
     </div>
+  )
+}
+
+function StatCell({ label, value, money = false, muted = false, accent = false }) {
+  const display = money
+    ? `$${Number(value || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
+    : Number(value || 0).toLocaleString('es-MX')
+  return (
+    <div className={cn('relative flex flex-col gap-1 px-4 py-3.5')}>
+      <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/75">
+        {label}
+      </span>
+      <span
+        className={cn(
+          'text-[22px] font-semibold tabular-nums leading-none tracking-[-0.015em]',
+          accent ? 'text-foreground' : muted ? 'text-foreground/85' : 'text-foreground',
+        )}
+      >
+        {display}
+      </span>
+    </div>
+  )
+}
+
+function QuickAction({ Icon, label, hint, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-muted/35 dark:hover:bg-zinc-900/40"
+    >
+      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/30 text-foreground/75 transition-colors group-hover:bg-muted/60 dark:bg-zinc-800/50">
+        <Icon className="size-3.5" strokeWidth={1.6} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12.5px] font-medium leading-tight text-foreground">{label}</span>
+        <span className="mt-0.5 block truncate text-[10.5px] leading-tight text-muted-foreground/75">{hint}</span>
+      </span>
+    </button>
   )
 }

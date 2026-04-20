@@ -250,7 +250,7 @@ function fetchProductsWithAllTagOptions(db, optionIds, excludeCodigo) {
   )
   const ex = String(excludeCodigo || '').trim()
   const params = [...oids]
-  let sql = `SELECT p.* FROM productos p WHERE ${parts.join(' AND ')}`
+  let sql = `SELECT p.* FROM inventario_activo p WHERE ${parts.join(' AND ')}`
   if (ex) {
     sql += ' AND TRIM(COALESCE(p.codigo,\'\')) != ?'
     params.push(ex)
@@ -684,12 +684,12 @@ function filasReferenciaPrecio(db, optionIds, excludeCodigo, mode) {
 function queryProductosAjustePorTags(db, strictExact, tagOptionIds) {
   const oids = [...toOptionIdSet(tagOptionIds)]
   if (oids.length === 0) {
-    return db.prepare('SELECT * FROM productos WHERE id = -1').all()
+    return db.prepare('SELECT * FROM inventario_activo WHERE id = -1').all()
   }
   const existsParts = oids.map(
     () => 'EXISTS (SELECT 1 FROM producto_tags pt WHERE pt.producto_id = p.id AND pt.tag_option_id = ?)',
   )
-  let sql = `SELECT p.* FROM productos p WHERE ${existsParts.join(' AND ')}`
+  let sql = `SELECT p.* FROM inventario_activo p WHERE ${existsParts.join(' AND ')}`
   const params = [...oids]
   if (strictExact) {
     sql += ' AND (SELECT COUNT(*) FROM producto_tags WHERE producto_id = p.id) = ?'

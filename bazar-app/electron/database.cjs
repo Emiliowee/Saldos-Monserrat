@@ -23,6 +23,7 @@ function getDb() {
   ensureInvPricingRulesSchema(_db)
   ensureTagNotionStyleMigration(_db)
   ensureProductosColumns(_db)
+  ensureInventarioActivoView(_db)
   ensureElectronExtras(_db)
   ensureBanquetaSalidasSchema(_db)
   return _db
@@ -104,6 +105,72 @@ function ensureInvPricingRulesSchema(database) {
     CREATE INDEX IF NOT EXISTS idx_inv_pricing_rule_anchor ON inv_pricing_rule (anchor_option_id);
     CREATE INDEX IF NOT EXISTS idx_inv_pricing_rule_row_rule ON inv_pricing_rule_row (rule_id);
   `)
+  try {
+    const cols = database.prepare('PRAGMA table_info(inv_pricing_rule)').all()
+    if (!cols.some((c) => c.name === 'custom_fields_json')) {
+      database.exec(`ALTER TABLE inv_pricing_rule ADD COLUMN custom_fields_json TEXT NOT NULL DEFAULT '[]'`)
+    }
+  } catch {
+    /* noop */
+  }
+}
+
+const INV_RULE_FIELD_TYPES = new Set(['text', 'select', 'number', 'image', 'checkbox'])
+
+/** Campos extra definidos por la regla (JSON en `inv_pricing_rule.custom_fields_json`). */
+function normalizeInvRuleCustomFieldsInput(raw) {
+  let arr = []
+  if (raw == null) arr = []
+  else if (Array.isArray(raw)) arr = raw
+  else if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw)
+      arr = Array.isArray(p) ? p : []
+    } catch {
+      arr = []
+    }
+  } else arr = []
+  const out = []
+  for (const entry of arr) {
+    if (!entry || typeof entry !== 'object') continue
+    let id = String(entry.id || '').trim()
+    const type = String(entry.type || 'text').toLowerCase()
+    if (!INV_RULE_FIELD_TYPES.has(type)) continue
+    const name = String(entry.name || '').trim().slice(0, 120)
+    if (!name) continue
+    if (!id) id = `fld_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const required = Boolean(entry.required)
+    const base = { id, type, name, required }
+    if (type === 'select') {
+      const options = Array.isArray(entry.options)
+        ? [...new Set(entry.options.map((x) => String(x ?? '').trim()).filter(Boolean))].slice(0, 80)
+        : []
+      if (options.length === 0) continue
+      out.push({ ...base, options })
+    } else {
+      out.push(base)
+    }
+  }
+  return out
+}
+
+function stringifyInvRuleFieldValues(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '{}'
+  try {
+    return JSON.stringify(obj)
+  } catch {
+    return '{}'
+  }
+}
+
+function parseInvRuleFieldValues(raw) {
+  if (raw == null || raw === '') return {}
+  try {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return o && typeof o === 'object' && !Array.isArray(o) ? { ...o } : {}
+  } catch {
+    return {}
+  }
 }
 
 /** Colores estilo Notion + icono opcional por sub-etiqueta (`tag_options.tag_icon`). */
@@ -191,6 +258,48 @@ function ensureProductosColumns(database) {
   add('created_at', 'created_at DATETIME')
   add('updated_at', 'updated_at DATETIME')
   add('stock', 'stock INTEGER NOT NULL DEFAULT 1')
+  add('vendido_en', 'vendido_en TEXT')
+  add('devuelto_en', 'devuelto_en TEXT')
+  add('baja_estado_manual_en', 'baja_estado_manual_en TEXT')
+  add('inv_rule_id', 'inv_rule_id INTEGER')
+  add('inv_rule_field_values', 'inv_rule_field_values TEXT')
+}
+
+/**
+ * Catálogo «activo»: piezas que no fueron dadas de baja por venta (vendido_en NULL).
+ * La UI de inventario y el POS consumen esta vista; los vendidos quedan en `productos` para historial.
+ */
+function ensureInventarioActivoView(database) {
+  ensureVentasSchema(database)
+  try {
+    database.exec(`
+      UPDATE productos
+      SET vendido_en = COALESCE(NULLIF(TRIM(updated_at), ''), NULLIF(TRIM(created_at), ''), datetime('now'))
+      WHERE LOWER(TRIM(COALESCE(estado, ''))) = 'vendido'
+        AND vendido_en IS NULL
+    `)
+  } catch (e) {
+    console.error('[db] ensureInventarioActivoView backfill vendido_en:', e)
+  }
+  try {
+    database.exec(`
+      UPDATE productos
+      SET estado = 'vendido', vendido_en = COALESCE(vendido_en, datetime('now'))
+      WHERE EXISTS (SELECT 1 FROM venta_items vi WHERE vi.producto_id = productos.id)
+        AND LOWER(TRIM(COALESCE(estado, ''))) = 'disponible'
+    `)
+  } catch (e) {
+    console.error('[db] ensureInventarioActivoView fix disponible+POS:', e)
+  }
+  try {
+    database.exec(`
+      DROP VIEW IF EXISTS inventario_activo;
+      CREATE VIEW inventario_activo AS
+      SELECT * FROM productos WHERE vendido_en IS NULL;
+    `)
+  } catch (e) {
+    console.error('[db] ensureInventarioActivoView:', e)
+  }
 }
 
 function friendlySqliteError(err) {
@@ -401,7 +510,8 @@ function hydrateProductRow(database, p) {
 
 function getProducts(filters = {}) {
   const database = getDb()
-  let sql = 'SELECT * FROM productos WHERE 1=1'
+  const from = filters.estado ? 'productos' : 'inventario_activo'
+  let sql = `SELECT * FROM ${from} WHERE 1=1`
   const params = []
   if (filters.estado) {
     sql += ' AND estado = ?'
@@ -425,14 +535,14 @@ function searchProducts(query) {
   const rows = database
     .prepare(
       `SELECT DISTINCT p.*
-       FROM productos p
+       FROM inventario_activo p
        LEFT JOIN producto_tags pt ON pt.producto_id = p.id
        LEFT JOIN tag_options o ON o.id = pt.tag_option_id
-       WHERE lower(p.codigo) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.descripcion,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(o.name,'')) LIKE ? ESCAPE '\\'
+       WHERE lower(p.codigo) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.descripcion,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.color,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.talla,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(o.name,'')) LIKE ? ESCAPE '\\'
        ORDER BY p.id DESC
        LIMIT 200`,
     )
-    .all(like, like, like)
+    .all(like, like, like, like, like)
   return rows.map((p) => hydrateProductRow(database, p))
 }
 
@@ -440,6 +550,9 @@ function getProductById(id) {
   const database = getDb()
   const p = database.prepare('SELECT * FROM productos WHERE id = ?').get(id)
   if (!p) return null
+  ensureVentasSchema(database)
+  const vc = database.prepare('SELECT COUNT(*) AS c FROM venta_items WHERE producto_id = ?').get(id)
+  const venta_items_count = Number(vc?.c) || 0
   const tagsByGroup = {}
   const links = database
     .prepare(
@@ -452,7 +565,14 @@ function getProductById(id) {
   for (const r of links) {
     tagsByGroup[r.group_id] = r.option_id
   }
-  return { ...p, tagsByGroup }
+  const { inv_rule_id, inv_rule_field_values, ...rest } = p
+  return {
+    ...rest,
+    tagsByGroup,
+    venta_items_count,
+    ruleId: inv_rule_id != null && Number(inv_rule_id) > 0 ? Number(inv_rule_id) : null,
+    ruleFieldValues: parseInvRuleFieldValues(inv_rule_field_values),
+  }
 }
 
 function getProductByCodigo(codigo) {
@@ -469,18 +589,23 @@ function getProductByCodigo(codigo) {
  */
 function getInventoryList(filters = {}) {
   const database = getDb()
+  ensureVentasSchema(database)
   const search = String(filters.search || '').trim()
-  const estadoIndex = Number(filters.estadoIndex) || 0
-  const vistaIndex = Number(filters.vistaIndex) || 0
+  const rawEstado = Number(filters.estadoIndex)
+  const rawVista = Number(filters.vistaIndex)
+  const estadoIndex = Number.isFinite(rawEstado) ? rawEstado : 0
+  const vistaIndex = Number.isFinite(rawVista) ? rawVista : 0
   const listTab = filters.listTab === 'stale' ? 'stale' : 'main'
 
   const params = []
-  let fromBody = 'productos p'
+  /** Archivo de vendidos: tabla base `productos`. Resto del inventario: vista `inventario_activo` (vendido_en IS NULL). */
+  const soldArchive = vistaIndex !== 1 && estadoIndex === 3
+  const base = soldArchive ? 'productos' : 'inventario_activo'
+  let fromBody = `${base} p`
   const where = []
 
   if (search) {
-    fromBody =
-      'productos p LEFT JOIN producto_tags pt ON pt.producto_id = p.id LEFT JOIN tag_options o ON o.id = pt.tag_option_id'
+    fromBody = `${base} p LEFT JOIN producto_tags pt ON pt.producto_id = p.id LEFT JOIN tag_options o ON o.id = pt.tag_option_id`
     const esc = (s) =>
       String(s)
         .trim()
@@ -489,33 +614,52 @@ function getInventoryList(filters = {}) {
         .replace(/_/g, '\\_')
     const like = `%${esc(search).toLowerCase()}%`
     where.push(
-      `(lower(p.codigo) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.descripcion,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(o.name,'')) LIKE ? ESCAPE '\\')`,
+      `(lower(p.codigo) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.descripcion,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.color,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(p.talla,'')) LIKE ? ESCAPE '\\' OR lower(COALESCE(o.name,'')) LIKE ? ESCAPE '\\')`,
     )
-    params.push(like, like, like)
+    params.push(like, like, like, like, like)
+  }
+
+  if (soldArchive) {
+    where.push(
+      "(p.vendido_en IS NOT NULL OR LOWER(TRIM(COALESCE(p.estado,''))) = 'vendido')",
+    )
   }
 
   if (listTab === 'stale') {
     where.push("LOWER(TRIM(COALESCE(p.estado,''))) = 'disponible'")
-    where.push("date(COALESCE(p.fecha_ingreso, p.created_at)) <= date('now', '-183 days')")
+    // Sin fecha: no excluir por NULL <= … (antes desaparecían de «+6 meses»). Sin ambas fechas → no es «viejo».
+    where.push(
+      "date(COALESCE(NULLIF(TRIM(COALESCE(p.fecha_ingreso,'')), ''), NULLIF(TRIM(COALESCE(p.created_at,'')), ''), datetime('now'))) <= date('now', '-183 days')",
+    )
   }
 
   if (vistaIndex === 1) {
     where.push("LOWER(TRIM(COALESCE(p.estado,''))) = 'en_banqueta'")
   } else {
     const em = { 1: 'disponible', 2: 'en_banqueta', 3: 'vendido', 4: 'reservado' }
-    if (estadoIndex >= 1 && estadoIndex <= 4) {
+    if (estadoIndex >= 1 && estadoIndex <= 4 && !soldArchive) {
       where.push('LOWER(TRIM(COALESCE(p.estado,\'\'))) = ?')
       params.push(em[estadoIndex])
+      if (estadoIndex === 1) {
+        where.push('NOT EXISTS (SELECT 1 FROM venta_items vi WHERE vi.producto_id = p.id)')
+      }
     }
   }
 
   const distinct = search ? 'DISTINCT ' : ''
-  let sql = `SELECT ${distinct}p.* FROM ${fromBody}`
+  const ventaCountSql =
+    '(SELECT COUNT(*) FROM venta_items vi WHERE vi.producto_id = p.id) AS venta_items_count'
+  let sql = `SELECT ${distinct}p.*, ${ventaCountSql} FROM ${fromBody}`
   if (where.length) sql += ` WHERE ${where.join(' AND ')}`
-  sql +=
-    listTab === 'stale'
-      ? " ORDER BY date(COALESCE(p.fecha_ingreso, p.created_at)) ASC LIMIT 500"
-      : ' ORDER BY p.id DESC LIMIT 500'
+  // Catálogo activo: primero artículos sin líneas POS (0), al final los que reingresaron o tienen historial (evita «vendidos arriba» por id alto).
+  if (listTab === 'stale') {
+    sql += " ORDER BY date(COALESCE(p.fecha_ingreso, p.created_at)) ASC LIMIT 500"
+  } else if (soldArchive) {
+    sql += ' ORDER BY p.id DESC LIMIT 500'
+  } else {
+    sql +=
+      ' ORDER BY (SELECT COUNT(*) FROM venta_items vi WHERE vi.producto_id = p.id) ASC, p.id DESC LIMIT 500'
+  }
 
   const rows = database.prepare(sql).all(...params)
   return rows.map((p) => hydrateProductRow(database, p))
@@ -561,12 +705,20 @@ function addProduct(product) {
   let stock = Math.max(1, Math.floor(Number(product.stock) || 1))
   if (pieza_unica) stock = 1
 
+  const invRuleId =
+    product.ruleId != null && String(product.ruleId).trim() !== '' && Number.isFinite(Number(product.ruleId)) && Number(product.ruleId) > 0
+      ? Math.floor(Number(product.ruleId))
+      : null
+  const invRuleFieldValues = stringifyInvRuleFieldValues(product?.ruleFieldValues)
+
   const insertProd = database.prepare(
     `INSERT INTO productos (
       codigo, descripcion, precio, pieza_unica, stock, color, talla, imagen_path, estado,
+      inv_rule_id, inv_rule_field_values,
       fecha_ingreso, created_at, updated_at
     ) VALUES (
       @codigo, @descripcion, @precio, @pieza_unica, @stock, @color, @talla, @imagen_path, @estado,
+      @inv_rule_id, @inv_rule_field_values,
       datetime('now'), datetime('now'), datetime('now')
     )`,
   )
@@ -586,6 +738,8 @@ function addProduct(product) {
         talla,
         imagen_path,
         estado,
+        inv_rule_id: invRuleId,
+        inv_rule_field_values: invRuleFieldValues,
       })
       const newId = Number(info.lastInsertRowid)
       delTags.run(newId)
@@ -604,6 +758,13 @@ function updateProduct(product) {
   const database = getDb()
   const id = Number(product.id)
   if (!Number.isFinite(id)) throw new Error('id inválido')
+  ensureVentasSchema(database)
+  const prevRow = database
+    .prepare('SELECT estado, vendido_en, devuelto_en, baja_estado_manual_en FROM productos WHERE id = ?')
+    .get(id)
+  if (!prevRow) throw new Error('Producto no encontrado')
+  const posRow = database.prepare('SELECT COUNT(*) AS c FROM venta_items WHERE producto_id = ?').get(id)
+  const posCount = Number(posRow?.c) || 0
   const tagsByGroup = parseTagsByGroup(product?.tagsByGroup ?? product?.tags_by_group)
   const oids = alta.toOptionIdSet(Object.values(tagsByGroup))
   const miss = alta.missingRequiredGroups(database, oids)
@@ -617,6 +778,34 @@ function updateProduct(product) {
   const pieza_unica = product.pieza_unica ? 1 : 0
   let stock = Math.max(1, Math.floor(Number(product.stock) || 1))
   if (pieza_unica) stock = 1
+  const estadoNew = String(product.estado || 'disponible').trim().toLowerCase()
+  const estadoPrevNorm = String(prevRow.estado || 'disponible').trim().toLowerCase()
+  if (estadoNew !== estadoPrevNorm && posCount > 0) {
+    throw new Error(
+      'Este artículo tiene ventas registradas en el POS: no se puede cambiar el estado desde la ficha (evita marcarlo «disponible» u otro estado y que deje de coincidir con los comprobantes).',
+    )
+  }
+  const hadVendidoEn = prevRow.vendido_en != null && String(prevRow.vendido_en).trim() !== ''
+  const now = database.prepare(`SELECT datetime('now') AS t`).get().t
+  let vendido_en = null
+  let devuelto_en = prevRow.devuelto_en
+  if (estadoNew === 'vendido') {
+    vendido_en = hadVendidoEn ? prevRow.vendido_en : now
+  } else {
+    if (hadVendidoEn) devuelto_en = now
+  }
+  let baja_estado_manual_en = prevRow.baja_estado_manual_en
+  if (posCount === 0 && estadoNew === 'vendido' && estadoPrevNorm !== 'vendido') {
+    baja_estado_manual_en = now
+  } else if (estadoNew !== 'vendido') {
+    baja_estado_manual_en = null
+  }
+  const invRuleIdUpd =
+    product.ruleId != null && String(product.ruleId).trim() !== '' && Number.isFinite(Number(product.ruleId)) && Number(product.ruleId) > 0
+      ? Math.floor(Number(product.ruleId))
+      : null
+  const invRuleFieldValuesUpd = stringifyInvRuleFieldValues(product?.ruleFieldValues)
+
   const upd = database.prepare(
     `UPDATE productos SET
       descripcion = @descripcion,
@@ -627,6 +816,11 @@ function updateProduct(product) {
       talla = @talla,
       imagen_path = @imagen_path,
       estado = @estado,
+      vendido_en = @vendido_en,
+      devuelto_en = @devuelto_en,
+      baja_estado_manual_en = @baja_estado_manual_en,
+      inv_rule_id = @inv_rule_id,
+      inv_rule_field_values = @inv_rule_field_values,
       updated_at = datetime('now')
      WHERE id = @id`,
   )
@@ -646,6 +840,11 @@ function updateProduct(product) {
         talla,
         imagen_path: String(product.imagen_path ?? '').trim(),
         estado: String(product.estado || 'disponible'),
+        vendido_en,
+        devuelto_en,
+        baja_estado_manual_en,
+        inv_rule_id: invRuleIdUpd,
+        inv_rule_field_values: invRuleFieldValuesUpd,
       })
       delTags.run(id)
       for (const oid of tagIds) {
@@ -658,11 +857,78 @@ function updateProduct(product) {
   }
 }
 
+/** Tablas conocidas primero (orden estable); luego cualquier otra detectada en el DDL. */
+const DELETE_PRODUCTO_CHILD_ORDER = ['banqueta_salida_items', 'plano_items', 'producto_tags', 'venta_items']
+
+function tableDdlReferencesProductos(sql) {
+  const s = String(sql || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  if (!s.includes('producto_id') || !s.includes('references') || !s.includes('productos')) return false
+  if (/foreign\s+key\s*\(\s*producto_id\s*\)\s*references\s+[`'"]?productos\b/.test(s)) return true
+  if (/producto_id[^,)]*references\s+[`'"]?productos\b/.test(s)) return true
+  return false
+}
+
+function listTablesReferencingProductosDdl(database) {
+  const rows = database.prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL`).all()
+  const out = []
+  for (const r of rows) {
+    if (!r?.name || r.name === 'productos') continue
+    if (!tableDdlReferencesProductos(r.sql)) continue
+    out.push(String(r.name))
+  }
+  return out
+}
+
+function deleteProductChildRows(database, pid) {
+  const ddlHits = new Set(listTablesReferencingProductosDdl(database))
+  const extras = [...ddlHits].filter((t) => !DELETE_PRODUCTO_CHILD_ORDER.includes(t)).sort((a, b) => a.localeCompare(b))
+  const sequence = [...DELETE_PRODUCTO_CHILD_ORDER, ...extras]
+  const done = new Set()
+  const quoteIdent = (n) => `"${String(n).replace(/"/g, '""')}"`
+  for (const t of sequence) {
+    if (done.has(t)) continue
+    try {
+      database.prepare(`DELETE FROM ${quoteIdent(t)} WHERE producto_id = ?`).run(pid)
+      done.add(t)
+    } catch (e) {
+      const msg = String(e?.message || e)
+      if (/no such column/i.test(msg) || /no such table/i.test(msg)) continue
+      throw e
+    }
+  }
+}
+
 function deleteProduct(id) {
   const database = getDb()
-  database.prepare('DELETE FROM plano_items WHERE producto_id = ?').run(id)
-  database.prepare('DELETE FROM producto_tags WHERE producto_id = ?').run(id)
-  database.prepare('DELETE FROM productos WHERE id = ?').run(id)
+  const pid = Number(id)
+  if (!Number.isFinite(pid) || pid <= 0) throw new Error('Identificador de producto no válido.')
+
+  ensureVentasSchema(database)
+  ensureBanquetaSalidasSchema(database)
+
+  const ventaRow = database.prepare('SELECT COUNT(*) AS c FROM venta_items WHERE producto_id = ?').get(pid)
+  if (Number(ventaRow?.c) > 0) {
+    throw new Error(
+      'No se puede eliminar el artículo porque figura en al menos una venta del POS (los comprobantes conservan el vínculo). Aunque lo edites y lo marques «Disponible» de nuevo, ese historial sigue y el borrado del catálogo no está permitido.',
+    )
+  }
+
+  try {
+    database.transaction(() => {
+      deleteProductChildRows(database, pid)
+      database.prepare('DELETE FROM productos WHERE id = ?').run(pid)
+    })()
+  } catch (e) {
+    const msg = String(e?.message || e || '')
+    if (e?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' || /FOREIGN KEY constraint failed/i.test(msg)) {
+      throw new Error(
+        'No se pudo eliminar el artículo: sigue referenciado en la base (p. ej. banqueta, plano o una tabla extra). Revisá Banqueta / planos o contactá soporte.',
+      )
+    }
+    throw e
+  }
   return { ok: true }
 }
 
@@ -1287,20 +1553,31 @@ function listInvPricingRules() {
     .prepare(
       `SELECT r.id, r.name, r.anchor_option_id, r.scope_all, r.active,
         (SELECT g.name || ': ' || o.name FROM tag_options o JOIN tag_groups g ON g.id = o.group_id WHERE o.id = r.anchor_option_id) AS anchor_label,
-        (SELECT COUNT(*) FROM inv_pricing_rule_row x WHERE x.rule_id = r.id) AS row_count
+        (SELECT COUNT(*) FROM inv_pricing_rule_row x WHERE x.rule_id = r.id) AS row_count,
+        COALESCE(r.custom_fields_json, '[]') AS custom_fields_json
        FROM inv_pricing_rule r
        ORDER BY r.updated_at DESC, r.id DESC`,
     )
     .all()
-    .map((row) => ({
-      id: Number(row.id),
-      name: String(row.name || ''),
-      anchor_option_id: Number(row.anchor_option_id),
-      anchor_label: String(row.anchor_label || ''),
-      scope_all: Number(row.scope_all) === 1,
-      active: Number(row.active) === 1,
-      row_count: Number(row.row_count) || 0,
-    }))
+    .map((row) => {
+      let customFieldCount = 0
+      try {
+        const a = JSON.parse(String(row.custom_fields_json || '[]'))
+        customFieldCount = Array.isArray(a) ? a.length : 0
+      } catch {
+        customFieldCount = 0
+      }
+      return {
+        id: Number(row.id),
+        name: String(row.name || ''),
+        anchor_option_id: Number(row.anchor_option_id),
+        anchor_label: String(row.anchor_label || ''),
+        scope_all: Number(row.scope_all) === 1,
+        active: Number(row.active) === 1,
+        row_count: Number(row.row_count) || 0,
+        custom_field_count: customFieldCount,
+      }
+    })
 }
 
 function getInvPricingRule(payload) {
@@ -1348,6 +1625,7 @@ function getInvPricingRule(payload) {
       companionIds: c.companionIds,
       price: c.price == null ? '' : String(c.price),
     })),
+    customFields: normalizeInvRuleCustomFieldsInput(r.custom_fields_json),
   }
 }
 
@@ -1371,6 +1649,14 @@ function upsertInvPricingRule(payload) {
   }
   const rawRows = Array.isArray(payload?.rows) ? payload.rows : []
   const verifyOpt = database.prepare('SELECT id FROM tag_options WHERE id = ? AND COALESCE(active,1)=1')
+  const customFields = normalizeInvRuleCustomFieldsInput(payload?.customFields)
+  for (const f of customFields) {
+    if (f.type === 'select' && (!Array.isArray(f.options) || f.options.length === 0)) {
+      throw new Error(`El selector «${f.name}» necesita al menos una opción.`)
+    }
+  }
+  const customFieldsJson = JSON.stringify(customFields)
+
   const normalizedRows = []
   for (let i = 0; i < rawRows.length; i++) {
     const r = rawRows[i]
@@ -1399,11 +1685,11 @@ function upsertInvPricingRule(payload) {
   const delScopes = database.prepare('DELETE FROM inv_pricing_rule_scope_group WHERE rule_id = ?')
   const delRows = database.prepare('DELETE FROM inv_pricing_rule_row WHERE rule_id = ?')
   const insRule = database.prepare(
-    `INSERT INTO inv_pricing_rule (name, anchor_option_id, scope_all, active, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    `INSERT INTO inv_pricing_rule (name, anchor_option_id, scope_all, active, notes, custom_fields_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
   )
   const updRule = database.prepare(
-    `UPDATE inv_pricing_rule SET name = ?, anchor_option_id = ?, scope_all = ?, active = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE inv_pricing_rule SET name = ?, anchor_option_id = ?, scope_all = ?, active = ?, notes = ?, custom_fields_json = ?, updated_at = datetime('now') WHERE id = ?`,
   )
   const insScope = database.prepare('INSERT INTO inv_pricing_rule_scope_group (rule_id, group_id) VALUES (?, ?)')
   const insRow = database.prepare(
@@ -1418,12 +1704,12 @@ function upsertInvPricingRule(payload) {
     if (existingId > 0) {
       const ex = database.prepare('SELECT id FROM inv_pricing_rule WHERE id = ?').get(existingId)
       if (!ex) throw new Error('La regla no existe.')
-      updRule.run(name, anchorOptionId, scopeAll ? 1 : 0, active, notes, existingId)
+      updRule.run(name, anchorOptionId, scopeAll ? 1 : 0, active, notes, customFieldsJson, existingId)
       delScopes.run(existingId)
       delRows.run(existingId)
       ruleId = existingId
     } else {
-      const info = insRule.run(name, anchorOptionId, scopeAll ? 1 : 0, active, notes)
+      const info = insRule.run(name, anchorOptionId, scopeAll ? 1 : 0, active, notes, customFieldsJson)
       ruleId = Number(info.lastInsertRowid)
     }
     outRuleId = ruleId
@@ -1727,34 +2013,80 @@ function addSale(payload) {
   ensureVentasSchema(database)
   const items = Array.isArray(payload?.items) ? payload.items : []
   if (items.length === 0) throw new Error('El carrito está vacío.')
-  const total = Number(payload?.total) || items.reduce((s, it) => s + (Number(it.precio) || 0) * (Number(it.cantidad) || 1), 0)
-  const pagoCon = payload?.pagoCon != null ? Number(payload.pagoCon) : null
-  const cambio = pagoCon != null ? Math.max(0, pagoCon - total) : null
+
   const metodo = String(payload?.metodo || 'efectivo')
   const notas = String(payload?.notas || '').trim()
 
+  const getProd = database.prepare(
+    'SELECT id, codigo, descripcion, precio, pieza_unica, stock, estado, vendido_en FROM productos WHERE id = ?',
+  )
+  const normalized = []
+  for (const it of items) {
+    const pid = Number(it.productoId || it.producto_id)
+    if (!Number.isFinite(pid) || pid <= 0) throw new Error('Ítem de venta con producto no válido.')
+    const row = getProd.get(pid)
+    if (!row) throw new Error(`Producto no encontrado (id ${pid}).`)
+    if (row.vendido_en != null && String(row.vendido_en).trim() !== '') {
+      throw new Error(`No se puede vender «${row.codigo}»: figura como vendido en inventario (reponé stock o marcá disponible desde edición).`)
+    }
+    const est = String(row.estado || '').trim().toLowerCase()
+    if (est && est !== 'disponible') {
+      throw new Error(`No se puede vender «${row.codigo}»: estado «${row.estado}».`)
+    }
+    const cantidad = Math.max(1, Math.floor(Number(it.cantidad) || 1))
+    const pieza = Number(row.pieza_unica) === 1
+    if (pieza && cantidad !== 1) throw new Error(`Pieza única «${row.codigo}»: solo 1 unidad por venta.`)
+    const stock = Math.max(0, Math.floor(Number(row.stock) || 0))
+    if (pieza && stock < 1) throw new Error(`Sin stock para «${row.codigo}».`)
+    if (!pieza && cantidad > stock) {
+      throw new Error(`Stock insuficiente «${row.codigo}» (disponible: ${stock}).`)
+    }
+    const precio = Number(row.precio) || 0
+    const codigo = String(row.codigo || '').trim()
+    const nombre = String(row.descripcion || codigo || '').trim()
+    normalized.push({ pid, codigo, nombre, precio, cantidad, pieza })
+  }
+
+  const total = normalized.reduce((s, x) => s + x.precio * x.cantidad, 0)
+  if (!Number.isFinite(total) || total < 0) throw new Error('Total de venta no válido.')
+
+  let pagoCon = null
+  if (payload?.pagoCon != null && payload.pagoCon !== '') {
+    const pc = Number(payload.pagoCon)
+    if (Number.isFinite(pc) && pc >= 0) pagoCon = pc
+  }
+  const cambio = pagoCon != null ? Math.max(0, pagoCon - total) : null
+
   const insVenta = database.prepare(
-    `INSERT INTO ventas (total, pago_con, cambio, metodo, notas) VALUES (?, ?, ?, ?, ?)`
+    `INSERT INTO ventas (total, pago_con, cambio, metodo, notas) VALUES (?, ?, ?, ?, ?)`,
   )
   const insItem = database.prepare(
-    `INSERT INTO venta_items (venta_id, producto_id, codigo_snapshot, nombre_snapshot, precio_snapshot, cantidad) VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO venta_items (venta_id, producto_id, codigo_snapshot, nombre_snapshot, precio_snapshot, cantidad) VALUES (?, ?, ?, ?, ?, ?)`,
   )
-  const updEstado = database.prepare(
-    `UPDATE productos SET estado = 'vendido', updated_at = datetime('now') WHERE id = ? AND pieza_unica = 1`
+  const updEstadoPieza = database.prepare(
+    `UPDATE productos SET estado = 'vendido', vendido_en = datetime('now'), updated_at = datetime('now') WHERE id = ? AND pieza_unica = 1`,
+  )
+  const updStockMulti = database.prepare(
+    `UPDATE productos SET
+       stock = stock - @c,
+       estado = CASE WHEN (stock - @c) <= 0 THEN 'vendido' ELSE estado END,
+       vendido_en = CASE WHEN (stock - @c) <= 0 THEN datetime('now') ELSE vendido_en END,
+       updated_at = datetime('now')
+     WHERE id = @id AND pieza_unica = 0 AND stock >= @c`,
   )
 
   let ventaId
   const run = database.transaction(() => {
     const info = insVenta.run(total, pagoCon, cambio, metodo, notas)
     ventaId = Number(info.lastInsertRowid)
-    for (const it of items) {
-      const pid = Number(it.productoId || it.producto_id)
-      const codigo = String(it.codigo || '').trim()
-      const nombre = String(it.nombre || it.descripcion || '').trim()
-      const precio = Number(it.precio) || 0
-      const cantidad = Math.max(1, Number(it.cantidad) || 1)
-      insItem.run(ventaId, pid, codigo, nombre, precio, cantidad)
-      updEstado.run(pid)
+    for (const x of normalized) {
+      insItem.run(ventaId, x.pid, x.codigo, x.nombre, x.precio, x.cantidad)
+      if (x.pieza) {
+        updEstadoPieza.run(x.pid)
+      } else {
+        const r = updStockMulti.run({ c: x.cantidad, id: x.pid })
+        if (r.changes === 0) throw new Error(`Stock insuficiente al confirmar «${x.codigo}».`)
+      }
     }
   })
   run()
@@ -1858,9 +2190,10 @@ function getWelcomeSnapshot() {
   const p = database
     .prepare(
       `SELECT
-        COUNT(*) AS productosTotal,
-        COALESCE(SUM(CASE WHEN LOWER(TRIM(estado)) = 'disponible' THEN 1 ELSE 0 END), 0) AS productosDisponibles
-       FROM productos`,
+        (SELECT COUNT(*) FROM productos) AS productosTotal,
+        (SELECT COUNT(*) FROM inventario_activo p
+          WHERE LOWER(TRIM(COALESCE(p.estado, ''))) = 'disponible'
+            AND NOT EXISTS (SELECT 1 FROM venta_items vi WHERE vi.producto_id = p.id)) AS productosDisponibles`,
     )
     .get()
   const c = database
@@ -2012,7 +2345,9 @@ function addProductToBanquetaSalida(salidaId, codigo) {
   const p = getProductByCodigo(codigo)
   if (!p) throw new Error('No hay artículo con ese código')
   const estActual = String(p.estado || '').trim().toLowerCase()
-  if (estActual === 'vendido') {
+  const marcadoVendido =
+    (p.vendido_en != null && String(p.vendido_en).trim() !== '') || estActual === 'vendido'
+  if (marcadoVendido) {
     throw new Error('Esta prenda figura como vendida. No se puede agregar a banqueta.')
   }
   const precio = Number(p.precio) || 0
@@ -2199,7 +2534,9 @@ function closeBanquetaSalida(salidaId) {
     database
       .prepare(`UPDATE banqueta_salidas SET estado = 'cerrada', closed_at = datetime('now') WHERE id = ?`)
       .run(sid)
-    const setVendido = database.prepare("UPDATE productos SET estado = 'vendido' WHERE id = ?")
+    const setVendido = database.prepare(
+      "UPDATE productos SET estado = 'vendido', vendido_en = COALESCE(vendido_en, datetime('now')) WHERE id = ?",
+    )
     const setDisponible = database.prepare(
       "UPDATE productos SET estado = 'disponible' WHERE id = ? AND LOWER(COALESCE(estado,'')) = 'en_banqueta'",
     )
@@ -2265,12 +2602,14 @@ function getBanquetaSidebarSnapshot() {
     const database = getDb()
     const r1 = database
       .prepare(
-        `SELECT COUNT(*) AS n FROM productos WHERE LOWER(TRIM(COALESCE(estado,''))) = 'en_banqueta'`,
+        `SELECT COUNT(*) AS n FROM inventario_activo WHERE LOWER(TRIM(COALESCE(estado,''))) = 'en_banqueta'`,
       )
       .get()
     const r2 = database
       .prepare(
-        `SELECT COUNT(*) AS n FROM productos WHERE LOWER(TRIM(COALESCE(estado,''))) = 'disponible'`,
+        `SELECT COUNT(*) AS n FROM inventario_activo p
+         WHERE LOWER(TRIM(COALESCE(p.estado,''))) = 'disponible'
+           AND NOT EXISTS (SELECT 1 FROM venta_items vi WHERE vi.producto_id = p.id)`,
       )
       .get()
     const planos = database

@@ -231,45 +231,74 @@
 }
 [data-app-workspace]::-webkit-scrollbar-track,
 [data-app-workspace] *::-webkit-scrollbar-track {
-  background: #fafafa;
+  background: var(--background);
 }
 [data-app-workspace]::-webkit-scrollbar-thumb,
 [data-app-workspace] *::-webkit-scrollbar-thumb {
-  background: #fafafa;
+  background: color-mix(in oklch, var(--primary) 15%, var(--muted));
   border-radius: 6px;
 }
 [data-app-workspace]::-webkit-scrollbar-thumb:hover,
 [data-app-workspace] *::-webkit-scrollbar-thumb:hover {
-  background: #f0f0f0;
+  background: color-mix(in oklch, var(--primary) 22%, var(--muted));
 }
 @supports (scrollbar-color: auto) {
   [data-app-workspace] * {
-    scrollbar-color: #fafafa #fafafa;
+    scrollbar-color: color-mix(in oklch, var(--primary) 15%, var(--muted)) var(--background);
     scrollbar-width: thin;
   }
 }
 
 .dark [data-app-workspace]::-webkit-scrollbar-track,
 .dark [data-app-workspace] *::-webkit-scrollbar-track {
-  background: #27272a;
+  background: var(--background);
 }
 .dark [data-app-workspace]::-webkit-scrollbar-thumb,
 .dark [data-app-workspace] *::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: color-mix(in oklch, var(--primary) 18%, var(--muted));
 }
 .dark [data-app-workspace]::-webkit-scrollbar-thumb:hover,
 .dark [data-app-workspace] *::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: color-mix(in oklch, var(--primary) 28%, var(--muted));
 }
 @supports (scrollbar-color: auto) {
   .dark [data-app-workspace] * {
-    scrollbar-color: #3f3f46 #27272a;
+    scrollbar-color: color-mix(in oklch, var(--primary) 18%, var(--muted)) var(--background);
   }
 }
 
 /* ── App section — consistent padding for all views ──────────────────── */
 .app-section {
   @apply px-6 py-5;
+}
+
+/* ── Inventario: checkboxes en hover / selección (evita <style> en la vista) ─ */
+.inv-table-select [data-inv-check-wrap] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.inv-table-select[data-has-selection] [data-inv-check-wrap],
+.inv-table-select tbody tr:hover td.inv-select-cell [data-inv-check-wrap],
+.inv-table-select thead tr:hover th.inv-select-cell [data-inv-check-wrap],
+.inv-table-select tbody tr:focus-within td.inv-select-cell [data-inv-check-wrap] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.inv-cards-grid [data-inv-card-check] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.inv-cards-grid[data-has-selection] [data-inv-card-check],
+.inv-cards-grid article:hover [data-inv-card-check] {
+  opacity: 1;
+  pointer-events: auto;
+}
+[data-app-workspace] .col-precio {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "lnum";
 }
 
 /* ── Embed windows (devices, rive, pdv-terminal) ─────────────────────── */

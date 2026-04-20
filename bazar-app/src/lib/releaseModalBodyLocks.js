@@ -9,3 +9,13 @@
 export function releaseModalBodyLocks() {
   document.body.style.removeProperty('pointer-events')
 }
+
+/**
+ * `window.confirm` y luego quitar `pointer-events: none` del `body` si Radix lo dejó colgado.
+ * Usar cuando haya modales (Radix) montados y se mezcle con el diálogo nativo del SO.
+ */
+export function nativeConfirm(message) {
+  const ok = window.confirm(message)
+  queueMicrotask(() => releaseModalBodyLocks())
+  return ok
+}

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trash2, Sparkles, ImagePlus, Package, Save } from 'lucide-react'
+import { Trash2, Sparkles, ImagePlus, Package, RefreshCw, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductLabelPreview } from '@/components/inventory/ProductLabelPreview'
 import { ProductReferencePanel } from '@/components/inventory/ProductReferencePanel'
 import { InventoryPropertyEditor } from '@/components/inventory/InventoryPropertyEditor'
 import { localPathToFileUrl } from '@/lib/localFileUrl'
+import { ipcErrorMessage } from '@/lib/ipcErrorMessage'
 import { PageHeader, PageHeaderDivider } from '@/components/premium'
 import { cn } from '@/lib/utils'
 
@@ -26,7 +27,34 @@ const ALTA_PREFS_DEFAULTS = { altaAutoFillMode: 'patrones', altaAutofillPrecioCu
 function tagsKey(map) { if (!map || typeof map !== 'object') return '{}'; const keys = Object.keys(map).map(Number).filter(Number.isFinite).sort((a, b) => a - b); return JSON.stringify(keys.reduce((acc, k) => { acc[k] = map[k]; return acc }, {})) }
 function optionIdPositive(v) { if (v == null || v === '') return false; const n = Number(v); return Number.isFinite(n) && n > 0 }
 function hasAnyTagSelected(map) { if (!map || typeof map !== 'object') return false; return Object.values(map).some(optionIdPositive) }
-function mapApiProductToDraft(full) { const pu = full.pieza_unica == null ? true : Number(full.pieza_unica) === 1 || full.pieza_unica === true; const st = Number(full.stock); return { id: full.id, codigo: full.codigo ?? '', descripcion: full.descripcion ?? '', precio: full.precio != null ? String(full.precio) : '', estado: String(full.estado || 'disponible').toLowerCase(), imagen_path: full.imagen_path ?? '', tagsByGroup: full.tagsByGroup && typeof full.tagsByGroup === 'object' ? full.tagsByGroup : {}, ruleId: full.ruleId ?? null, pieza_unica: pu, stock: Number.isFinite(st) && st >= 1 ? Math.floor(st) : 1 } }
+function mapApiProductToDraft(full) {
+  const pu = full.pieza_unica == null ? true : Number(full.pieza_unica) === 1 || full.pieza_unica === true
+  const st = Number(full.stock)
+  const stock = pu
+    ? 1
+    : Number.isFinite(st) && st >= 0
+      ? Math.floor(st)
+      : 1
+  const nid = Number(full.id)
+  return {
+    id: Number.isFinite(nid) ? nid : full.id,
+    codigo: full.codigo ?? '',
+    descripcion: full.descripcion ?? '',
+    precio: full.precio != null ? String(full.precio) : '',
+    estado: String(full.estado || 'disponible').toLowerCase(),
+    imagen_path: full.imagen_path ?? '',
+    tagsByGroup: full.tagsByGroup && typeof full.tagsByGroup === 'object' ? full.tagsByGroup : {},
+    ruleId: full.ruleId ?? null,
+    ruleFieldValues: full.ruleFieldValues && typeof full.ruleFieldValues === 'object' && !Array.isArray(full.ruleFieldValues) ? { ...full.ruleFieldValues } : {},
+    pieza_unica: pu,
+    stock,
+    venta_items_count: Math.max(0, Math.floor(Number(full.venta_items_count) || 0)),
+    baja_estado_manual_en:
+      full.baja_estado_manual_en != null && String(full.baja_estado_manual_en).trim() !== ''
+        ? String(full.baja_estado_manual_en)
+        : null,
+  }
+}
 
 /**
  * Página de edición / alta de producto, al estilo Notion page:
@@ -102,17 +130,18 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
     if (e.key !== 'Enter') return; const raw = String(draft.codigo || '').trim(); if (!raw) return
     const api = window.bazar?.db?.getProductByCodigo; if (!api) return
     try { const full = await api(raw); if (!full) { toast.message(`No encontrado: «${raw}»`); return }; onProductLoadedFromLookup?.(mapApiProductToDraft(full)); toast.message(`Cargado: ${full.codigo}`) }
-    catch (err) { toast.error(String(err?.message || err)) }
+    catch (err) { toast.error(ipcErrorMessage(err)) }
   }
 
   const pickImage = async () => {
     const pick = window.bazar?.productImage?.pick; if (!pick) return
     try { const res = await pick(); if (res?.cancelled || !res?.path) return; setDraft((d) => ({ ...d, imagen_path: res.path })); toast.success('Imagen asignada') }
-    catch (err) { toast.error(String(err?.message || err)) }
+    catch (err) { toast.error(ipcErrorMessage(err)) }
   }
 
   const imgSrc = draft.imagen_path ? localPathToFileUrl(draft.imagen_path) : ''
   const tagsOk = hasAnyTagSelected(draft.tagsByGroup)
+  const posLineas = Math.max(0, Math.floor(Number(draft.venta_items_count) || 0))
   const isNew = mode === 'new' || draft.id == null
   const pageTitle = isNew
     ? 'Nuevo artículo'
@@ -120,7 +149,7 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
 
   const handleSaveClick = async () => {
     if (saveBusy) return; setSaveBusy(true)
-    try { await onSave?.() } catch (err) { toast.error(String(err?.message || err) || 'Error') }
+    try { await onSave?.() } catch (err) { toast.error(ipcErrorMessage(err) || 'Error') }
     finally { setSaveBusy(false) }
   }
 
@@ -128,10 +157,11 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
   if (!isNew && typeof onDelete === 'function') {
     menuItems.push({
       id: 'delete',
-      label: 'Eliminar artículo',
+      label: posLineas > 0 ? 'Eliminar (bloqueado: historial POS)' : 'Eliminar artículo',
       icon: <Trash2 className="size-3.5" />,
       destructive: true,
       separatorBefore: true,
+      disabled: posLineas > 0,
       onClick: () => void onDelete(),
     })
   }
@@ -172,13 +202,26 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
               'bg-foreground text-background hover:bg-foreground/90',
             )}
           >
-            <Save className="size-3.5" strokeWidth={2} />
+            {saveBusy ? (
+              <RefreshCw className="size-3.5 shrink-0 animate-spin" strokeWidth={2} aria-hidden />
+            ) : (
+              <Save className="size-3.5" strokeWidth={2} aria-hidden />
+            )}
             {saveBusy ? 'Guardando…' : 'Guardar'}
           </button>
         }
         menuItems={menuItems.length > 0 ? menuItems : undefined}
       />
       <PageHeaderDivider />
+      {!isNew && posLineas > 0 ? (
+        <div className="mx-10 mt-2 rounded-lg border border-border/60 bg-muted/35 px-3 py-2.5 text-[12px] leading-snug text-muted-foreground">
+          <span className="font-medium text-foreground/88">Historial en ventas POS: </span>
+          este artículo figura en {posLineas} línea(s) de comprobantes. El estado <span className="font-medium text-foreground/88">no se puede cambiar</span> desde la ficha;{' '}
+          <span className="font-medium text-foreground/88">no se puede borrar del catálogo</span> mientras existan esas
+          líneas. No es lo mismo que marcar «Vendido» solo en la ficha (ahí se registra la fecha de baja manual y no hay
+          comprobante POS).
+        </div>
+      ) : null}
 
       {/* Tabs */}
       <div className="flex shrink-0 items-center gap-0.5 border-b border-border/50 px-10">
@@ -214,9 +257,15 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
                 <InventoryPropertyEditor
                   ruleId={draft.ruleId ?? null}
                   tagsByGroup={draft.tagsByGroup}
-                  onChange={({ ruleId, tagsByGroup }) => {
+                  ruleFieldValues={draft.ruleFieldValues}
+                  onChange={({ ruleId, tagsByGroup, ruleFieldValues: rv }) => {
                     lastAutofillKey.current = ''
-                    setDraft((d) => ({ ...d, ruleId: ruleId ?? null, tagsByGroup }))
+                    setDraft((d) => ({
+                      ...d,
+                      ruleId: ruleId ?? null,
+                      tagsByGroup,
+                      ...(rv !== undefined ? { ruleFieldValues: rv } : {}),
+                    }))
                   }}
                 />
               </section>
@@ -283,7 +332,17 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
                 {!isNew ? (
                   <PropertyRow label="Estado">
                     <select
-                      className={cn(fieldClass, 'appearance-none bg-[url(\'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>\')] bg-[length:12px_12px] bg-[center_right_10px] bg-no-repeat pr-7')}
+                      disabled={posLineas > 0}
+                      title={
+                        posLineas > 0
+                          ? 'Hay ventas POS: el estado no se puede cambiar para que coincida con los comprobantes.'
+                          : undefined
+                      }
+                      className={cn(
+                        fieldClass,
+                        'appearance-none bg-[url(\'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>\')] bg-[length:12px_12px] bg-[center_right_10px] bg-no-repeat pr-7',
+                        posLineas > 0 && 'cursor-not-allowed opacity-70',
+                      )}
                       value={draft.estado}
                       onChange={(e) => setDraft((d) => ({ ...d, estado: e.target.value }))}
                     >
@@ -291,6 +350,21 @@ export function InventoryProductPage({ draft, setDraft, mode, onSave, onBack, on
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
+                    {posLineas > 0 ? (
+                      <p className="mt-1 max-w-md text-[11px] leading-snug text-muted-foreground">
+                        Con historial en el POS el estado queda fijado; no es un «vendido» solo de la ficha.
+                      </p>
+                    ) : null}
+                    {posLineas === 0 && draft.estado === 'vendido' && draft.baja_estado_manual_en ? (
+                      <p className="mt-1 max-w-md text-[11px] leading-snug text-muted-foreground">
+                        Marcado <span className="font-medium text-foreground/85">vendido solo desde esta ficha</span>{' '}
+                        (sin línea de venta POS) el{' '}
+                        {String(draft.baja_estado_manual_en).length >= 10
+                          ? String(draft.baja_estado_manual_en).slice(0, 10)
+                          : draft.baja_estado_manual_en}
+                        . No genera comprobante; sirve para baja interna o mostrador sin cobro en POS.
+                      </p>
+                    ) : null}
                   </PropertyRow>
                 ) : null}
                 <PropertyRow label="Pieza única">

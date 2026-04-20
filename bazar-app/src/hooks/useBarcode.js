@@ -12,6 +12,10 @@ export function useBarcode(onScan, options = {}) {
 
   useEffect(() => {
     const handleKeydown = (e) => {
+      const active = document.activeElement
+      if (active instanceof HTMLElement && active.closest('[data-no-barcode="true"]')) {
+        return
+      }
       const t = e.target
       if (t instanceof HTMLElement && t.closest('[data-no-barcode="true"]')) {
         return
@@ -27,6 +31,10 @@ export function useBarcode(onScan, options = {}) {
       }
 
       if (e.key === 'Enter') {
+        if (typeof document !== 'undefined' && document.querySelector('[data-no-barcode="true"]')) {
+          buffer.current = ''
+          return
+        }
         if (buffer.current.length >= minLength) {
           onScan(buffer.current)
         }

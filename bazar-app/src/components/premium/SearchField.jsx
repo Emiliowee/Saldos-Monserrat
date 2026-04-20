@@ -20,9 +20,10 @@ export const SearchField = forwardRef(function SearchField(
   const hasValue = !!value && value.length > 0
   return (
     <div
+      data-no-barcode="true"
       className={cn(
         'group relative inline-flex h-7 items-center rounded-md border border-transparent bg-transparent transition-[background-color,border-color] duration-120',
-        'hover:border-border/60 hover:bg-[#f3f3f2] dark:hover:bg-zinc-800/60',
+        'hover:border-border/60 hover:bg-muted/70 dark:hover:bg-muted/55',
         'focus-within:border-ring/40 focus-within:bg-background focus-within:shadow-[inset_0_0_0_1px_var(--ring)]',
         width,
         className,
@@ -35,8 +36,14 @@ export const SearchField = forwardRef(function SearchField(
       />
       <input
         ref={ref}
-        type="search"
+        type="text"
+        inputMode="search"
+        enterKeyHint="search"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
         data-no-barcode="true"
+        role="searchbox"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}

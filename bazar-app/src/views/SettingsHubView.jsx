@@ -11,6 +11,7 @@ import { useTheme } from '@/theme/ThemeProvider.jsx'
 import { localPathToFileUrl } from '@/lib/localFileUrl'
 import { useAppStore } from '@/stores/useAppStore.js'
 import { Button } from '@/components/ui/button'
+import { appConfirm } from '@/lib/appConfirm'
 import { LabelEditor } from '@/components/label-editor/LabelEditor'
 
 const DEFAULT_WORKSPACE_LOGO = '/branding/logo.jpg'
@@ -90,7 +91,7 @@ function WorkspaceSection() {
       <SettingsGroup label="Nombre visible">
         <input type="text" className="h-9 w-full max-w-sm rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring" value={String(settings.workspaceDisplayName ?? 'Saldos Monserrat')} onChange={(e) => setSettings((s) => ({ ...s, workspaceDisplayName: e.target.value }))} onBlur={(e) => void patch({ workspaceDisplayName: e.target.value.trim() || 'Saldos Monserrat' })} />
       </SettingsGroup>
-      <SettingsGroup label="Imagen (avatar)" hint="Cuadrada o circular; se muestra redonda en la barra lateral.">
+      <SettingsGroup label="Imagen (avatar)" hint="Cuadrada o circular; se muestra redonda en la barra lateral. Es el logo de la empresa en las etiquetas cuando la plantilla incluye el bloque «Logo empresa» (misma imagen).">
         <div className="flex items-center gap-4">
           <img src={logoPreview} alt="" className="size-14 rounded-lg object-cover border" onError={(e) => { e.currentTarget.src = DEFAULT_WORKSPACE_LOGO }} />
           <div className="flex flex-col gap-2">
@@ -129,7 +130,7 @@ function AppearanceSection() {
 function AutofillSection() {
   const [settings, setSettings] = useState(null)
   const load = useCallback(async () => { const st = await window.bazar?.settings?.get?.(); if (st) setSettings(st) }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
   const patch = async (key, value) => { const next = { ...settings, [key]: value }; setSettings(next); await window.bazar?.settings?.set?.({ [key]: value }) }
   if (!settings) return <p className="text-sm text-muted-foreground py-8">Cargando…</p>
   const modes = [{ id: 'patrones', label: 'Patrones' }, { id: 'cuaderno', label: 'Cuaderno' }, { id: 'off', label: 'Desactivado' }]
@@ -169,7 +170,7 @@ function PrintingSection() {
     if (Array.isArray(pl)) setPrintersList(pl)
     if (tpl) setTemplates(tpl)
   }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
   useEffect(() => { if (!editorOpen) void load() }, [editorOpen, load])
   const patch = async (key, value) => { const next = { ...settings, [key]: value }; setSettings(next); await window.bazar?.settings?.set?.({ [key]: value }) }
   if (!settings) return <p className="text-sm text-muted-foreground py-8">Cargando…</p>
@@ -205,7 +206,7 @@ function PrintingSection() {
       <SettingsGroup label="Comportamiento al guardar">
         <CheckField checked={settings.printLabelAfterSave === true} onChange={(e) => void patch('printLabelAfterSave', e.target.checked)} label="Generar etiqueta PDF al crear producto" hint="Al guardar un artículo nuevo, crea el PDF en la carpeta configurada." />
       </SettingsGroup>
-      <SettingsGroup label="Diseño de la etiqueta" hint="Personalizá bloques, tamaños, tipografía y plantillas. Podés restaurar siempre el diseño original.">
+      <SettingsGroup label="Diseño de la etiqueta" hint="Personalizá bloques, tamaños, tipografía y plantillas. El aspecto del logo (térmica B/N o color) se ajusta en el editor al seleccionar el bloque «Logo empresa». Podés restaurar siempre el diseño original.">
         <div className="rounded-lg border p-4 flex items-center gap-3">
           <div className="size-9 rounded-md bg-primary/10 text-primary inline-flex items-center justify-center shrink-0">
             <Sparkles className="size-4" />
@@ -248,8 +249,12 @@ function DataSection() {
   const resetDb = async () => {
     const api = window.bazar?.db?.resetToFactorySeed
     if (!api) { toast.error('Solo en Electron.'); return }
-    if (!window.confirm('Se va a BORRAR toda la base y cargar datos demo. ¿Continuar?')) return
-    if (!window.confirm('Confirmación final: ¿Borrar todo?')) return
+    if (!(await appConfirm('¿Borrar TODA la base de datos y cargar datos demo?', {
+      destructive: true,
+      title: 'Reiniciar base de datos',
+      confirmLabel: 'Sí, borrar todo',
+      description: 'Esta acción no se puede deshacer: se eliminan artículos, ventas y ajustes del espacio y se recargan datos de muestra.',
+    }))) return
     setBusy(true)
     try { const res = await api(); if (res?.ok) toast.success(`Base reiniciada: ${res.productCount ?? 0} artículos demo.`); else toast.error(res?.message || 'Error') }
     catch (e) { toast.error(String(e?.message || e)) }

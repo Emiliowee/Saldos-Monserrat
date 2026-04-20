@@ -43,16 +43,36 @@ declare global {
         >
         getProductById: (
           id: number,
-        ) => Promise<(Record<string, unknown> & { tagsByGroup?: Record<number, number> }) | null>
+        ) => Promise<
+          | (Record<string, unknown> & {
+              tagsByGroup?: Record<number, number>
+              venta_items_count?: number
+            })
+          | null
+        >
         getProductByCodigo: (
           codigo: string,
-        ) => Promise<(Record<string, unknown> & { tagsByGroup?: Record<number, number> }) | null>
+        ) => Promise<
+          | (Record<string, unknown> & {
+              tagsByGroup?: Record<number, number>
+              venta_items_count?: number
+            })
+          | null
+        >
         getInventoryList: (filters: {
           search?: string
           estadoIndex?: number
           vistaIndex?: number
           listTab?: 'main' | 'stale'
-        }) => Promise<Array<Record<string, unknown> & { tags?: string; fecha_ingreso?: string | null }>>
+        }) => Promise<
+          Array<
+            Record<string, unknown> & {
+              tags?: string
+              fecha_ingreso?: string | null
+              venta_items_count?: number
+            }
+          >
+        >
         getTagLabelsForMap: (map: Record<number, number>) => Promise<string[]>
         suggestNombreFromTags: (payload: {
           tagsByGroup?: Record<number, number>
@@ -263,6 +283,7 @@ declare global {
             scope_all: boolean
             active: boolean
             row_count: number
+            custom_field_count?: number
           }>
         >
         getInvPricingRule: (payload: { id: number }) => Promise<{
@@ -274,6 +295,13 @@ declare global {
           notes: string
           scopeGroupIds: number[]
           rows: Array<{ companionIds: number[]; price: string }>
+          customFields?: Array<{
+            id: string
+            type: 'text' | 'select' | 'number' | 'image' | 'checkbox'
+            name: string
+            required: boolean
+            options?: string[]
+          }>
         }>
         upsertInvPricingRule: (payload: {
           id?: number | null
@@ -284,8 +312,19 @@ declare global {
           rows: Array<{ companionIds: number[]; price?: string | number | null }>
           active?: boolean
           notes?: string
+          customFields?: Array<{
+            id: string
+            type: 'text' | 'select' | 'number' | 'image' | 'checkbox'
+            name: string
+            required: boolean
+            options?: string[]
+          }>
         }) => Promise<{ ok: boolean; id: number }>
         deleteInvPricingRule: (payload: { id: number }) => Promise<{ ok: boolean }>
+      }
+      assets?: {
+        /** Ruta absoluta del archivo → data URL (PNG) para vista previa en SVG. */
+        logoDataUrl: (absPath: string) => Promise<{ ok: boolean; dataUrl?: string; message?: string }>
       }
       settings: {
         get: () => Promise<{
@@ -302,6 +341,10 @@ declare global {
           labelPdfSavePath?: string
           workspaceDisplayName?: string
           workspaceLogoPath?: string
+          labelLogoStyle?: 'thermal' | 'original'
+          labelLogoWarmth?: number
+          labelLogoContrast?: number
+          labelLogoSaturation?: number
           navBanquetaFolderOpen?: boolean
           sidebarCollapsed?: boolean
           /** Barra lateral oculta por completo (peek al hover en el borde) */

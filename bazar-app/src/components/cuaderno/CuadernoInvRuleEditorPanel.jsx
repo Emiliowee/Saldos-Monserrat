@@ -1,24 +1,56 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  CheckSquare,
   ChevronDown,
   CornerDownLeft,
+  Hash,
+  ImagePlus,
   Layers,
+  List,
   Plus,
   Search,
-  ScrollText,
+  RefreshCw,
   Tag as TagIcon,
   Trash2,
+  Type,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { InvRulesNotebookIcon } from '@/components/cuaderno/InvRulesNotebookIcon.jsx'
+import { appConfirm } from '@/lib/appConfirm'
 import { cloneComboRows } from '@/lib/cuadernoPriceCombos.js'
 import { normalizeNotionColorKey, notionTagChipReadonlyClasses } from '@/lib/propertyTokens'
 
 /** Pie alineado con Inventario (`muted` suave). */
 const chromeFooter = 'bg-muted/25'
+
+const INV_CAMPO_TYPES = [
+  { type: 'text', label: 'Texto libre', hint: 'Color, notas, descripción corta', Icon: Type },
+  { type: 'select', label: 'Selector', hint: 'Opciones fijas (ej. CH, M, G)', Icon: List },
+  { type: 'number', label: 'Número', hint: 'Medidas, peso', Icon: Hash },
+  { type: 'image', label: 'Imagen', hint: 'Foto del artículo', Icon: ImagePlus },
+  { type: 'checkbox', label: 'Checkbox', hint: 'Sí / no (ej. ¿tiene defecto?)', Icon: CheckSquare },
+]
+
+function newInvRuleCampoId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `fld_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+}
+
+function createInvRuleCampo(type) {
+  const id = newInvRuleCampoId()
+  if (type === 'select') return { id, type: 'select', name: '', required: false, options: [] }
+  return { id, type, name: '', required: false }
+}
+
+function campoTypeIcon(type) {
+  const hit = INV_CAMPO_TYPES.find((t) => t.type === type)
+  const Ico = hit?.Icon || Type
+  return <Ico className="size-3.5 shrink-0 opacity-80" strokeWidth={1.75} aria-hidden />
+}
 
 /** Catálogo plano de opciones disponibles, excluyendo la categoría del ancla. */
 function useTagCatalog(groups, anchorGroupId, scopeAll, scopeGroupIds) {
@@ -49,6 +81,9 @@ function useTagCatalog(groups, anchorGroupId, scopeAll, scopeGroupIds) {
   }, [groups, anchorGroupId, scopeAll, scopeGroupIds])
 }
 
+/**
+ * @param {{ name: string, color?: string, onRemove?: () => void, size?: 'xs' | 'sm' }} props
+ */
 function TagPill({ name, color = 'default', onRemove, size = 'sm' }) {
   const sz = size === 'xs'
     ? 'h-5 px-1.5 text-[10.5px]'
@@ -80,7 +115,15 @@ function TagPill({ name, color = 'default', onRemove, size = 'sm' }) {
 }
 
 /** Picker del tag ancla: buscador, lista agrupada, crear-con-enter y drop desde el árbol. */
-function AnchorTagCombobox({ value, valueLabel, valueColor, groups, disabled, onSelect, onOpenChange }) {
+function AnchorTagCombobox({
+  value,
+  valueLabel,
+  valueColor,
+  groups,
+  disabled = false,
+  onSelect,
+  onOpenChange = undefined,
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -402,10 +445,11 @@ function CompanionPicker({ catalog, selectedIds, onToggle, onClear }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-6 items-center gap-1 rounded-[4px] border border-dashed border-border/70 bg-transparent px-1.5 text-[11px] text-muted-foreground transition-colors hover:border-foreground/50 hover:text-foreground dark:border-zinc-700 dark:hover:border-zinc-500"
+          className="inline-flex h-6 max-w-full items-center gap-1 rounded-[4px] border border-dashed border-border/70 bg-transparent px-1.5 text-[10.5px] text-muted-foreground transition-colors hover:border-foreground/50 hover:text-foreground dark:border-zinc-700 dark:hover:border-zinc-500"
+          title="Agregar otro tag que acompaña al ancla en esta fila"
         >
-          <Plus className="size-3" strokeWidth={2} aria-hidden />
-          Combinación
+          <Plus className="size-3 shrink-0" strokeWidth={2} aria-hidden />
+          <span className="truncate">Agregar tag</span>
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -491,12 +535,18 @@ function PriceRow({ row, idx, catalog, anchorLabel, anchorColor, onChange, onRem
     const set = new Set(row.companionIds || [])
     if (set.has(optId)) set.delete(optId)
     else set.add(optId)
-    onChange({ ...row, companionIds: [...set] })
+    onChange({ ...row, companionIds: Array.from(set) })
   }
 
   return (
     <div className="group/row flex items-center gap-2 rounded-md px-1 py-1.5 transition-colors hover:bg-muted/45 dark:hover:bg-zinc-900/50">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+        <span
+          className="shrink-0 select-none pr-0.5 text-[12px] font-medium tracking-tight text-muted-foreground/75"
+          title="Si el artículo tiene el ancla más estos tags"
+        >
+          Si
+        </span>
         {anchorLabel ? <TagPill name={anchorLabel} color={anchorColor} /> : null}
         {selectedTags.map((t) => (
           <TagPill
@@ -513,6 +563,12 @@ function PriceRow({ row, idx, catalog, anchorLabel, anchorColor, onChange, onRem
           onClear={() => onChange({ ...row, companionIds: [] })}
         />
       </div>
+      <span
+        className="shrink-0 select-none px-0.5 text-[14px] font-medium text-muted-foreground/45"
+        aria-hidden
+      >
+        →
+      </span>
       <div className="flex shrink-0 items-center">
         <span className="select-none pr-1 text-[12px] text-muted-foreground/80 tabular-nums">$</span>
         <input
@@ -548,6 +604,7 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
   const [scopeAll, setScopeAll] = useState(true)
   const [scopeGroupIds, setScopeGroupIds] = useState(() => new Set())
   const [active, setActive] = useState(true)
+  const [customFields, setCustomFields] = useState([])
   const [rows, setRows] = useState(() => cloneComboRows([{ companionIds: [], price: '' }]))
 
   const anchorLocation = useMemo(() => {
@@ -575,6 +632,7 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
     setScopeAll(true)
     setScopeGroupIds(new Set())
     setActive(true)
+    setCustomFields([])
     setRows(cloneComboRows([{ companionIds: [], price: '' }]))
   }, [])
 
@@ -606,6 +664,7 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
               )
             : cloneComboRows([{ companionIds: [], price: '' }])
         setRows(nextRows)
+        setCustomFields(Array.isArray(r.customFields) ? r.customFields : [])
       } catch (e) {
         toast.error(String(e?.message || e))
         onClose?.()
@@ -663,6 +722,17 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
     if (!name.trim()) { toast.error('Ponele un nombre a la regla.'); return }
     if (!anchorOptionId) { toast.error('Elegí el tag ancla.'); return }
     if (!scopeAll && scopeGroupIds.size === 0) { toast.error('Elegí al menos una categoría o usá «Todas».'); return }
+    for (const f of customFields) {
+      const nm = String(f?.name || '').trim()
+      if (!nm) {
+        toast.error('Cada campo de «Campos» necesita un nombre.')
+        return
+      }
+      if (f.type === 'select' && (!Array.isArray(f.options) || f.options.length === 0)) {
+        toast.error(`El selector «${nm}» necesita al menos una opción.`)
+        return
+      }
+    }
     setSaving(true)
     try {
       const res = await api({
@@ -671,8 +741,9 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
         notes: description.trim() || null,
         anchorOptionId,
         scopeAll,
-        scopeGroupIds: scopeAll ? [] : [...scopeGroupIds],
+        scopeGroupIds: scopeAll ? [] : Array.from(scopeGroupIds),
         active,
+        customFields,
         rows: rows.map((r) => ({
           companionIds: r.companionIds || [],
           price: String(r.price ?? '').trim() === '' ? null : r.price,
@@ -689,7 +760,7 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
 
   const handleDelete = async () => {
     if (ruleId == null) return
-    if (!window.confirm('¿Eliminar esta regla?')) return
+    if (!(await appConfirm('¿Eliminar esta regla?', { destructive: true, confirmLabel: 'Eliminar' }))) return
     const api = window.bazar?.db?.deleteInvPricingRule
     if (typeof api !== 'function') return
     try {
@@ -710,7 +781,7 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
           ) : (
             <>
               <div className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                <ScrollText className="size-3.5 shrink-0 opacity-70" strokeWidth={1.75} aria-hidden />
+                <InvRulesNotebookIcon className="size-3.5 shrink-0 opacity-85" aria-hidden />
                 <span>Regla de inventario</span>
               </div>
 
@@ -763,6 +834,9 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
                     <span className={cn(active ? 'text-foreground' : 'text-muted-foreground')}>{active ? 'Activa' : 'Pausada'}</span>
                   </button>
                 </PropertyRow>
+                <PropertyRow icon={<List className="size-3.5" strokeWidth={1.75} />} label="Campos">
+                  <CamposPropertyCell customFields={customFields} setCustomFields={setCustomFields} />
+                </PropertyRow>
               </div>
 
               {anchorOptionId ? (
@@ -771,10 +845,10 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
                 </p>
               ) : null}
 
-              <div className="mt-10 border-t border-border/60 pt-6">
+              <div className="mt-14 border-t border-border pt-8">
                 <div className="flex items-end justify-between gap-2">
                   <div>
-                    <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/90">Precios</h3>
+                    <h3 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-foreground/70">Precios</h3>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
                       Cada fila define qué otros tags acompañan al ancla y el precio exacto de esa combinación.
                     </p>
@@ -850,15 +924,297 @@ export function CuadernoInvRuleEditorPanel({ ruleId, groups, onClose, onSaved, o
           <Button
             type="button"
             size="sm"
-            className="h-8 text-[12px]"
+            className="inline-flex h-8 items-center justify-center gap-1.5 text-[12px]"
             disabled={loading || saving}
             onClick={() => void handleSave()}
           >
-            Guardar cambios
+            {saving ? (
+              <>
+                <RefreshCw className="mr-1 size-3.5 shrink-0 animate-spin" strokeWidth={1.75} aria-hidden />
+                Guardando…
+              </>
+            ) : (
+              'Guardar cambios'
+            )}
           </Button>
         </div>
       </div>
     </div>
+  )
+}
+
+function CamposPropertyCell({ customFields, setCustomFields }) {
+  const [open, setOpen] = useState(false)
+  const [addPickerOpen, setAddPickerOpen] = useState(false)
+  const [optDraft, setOptDraft] = useState(() => ({}))
+  const [expandedId, setExpandedId] = useState(null)
+  const newFieldInputRef = useRef({})
+
+  const patchField = (id, patch) =>
+    setCustomFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+
+  const removeField = (id) => {
+    setExpandedId((e) => (e === id ? null : e))
+    setCustomFields((prev) => prev.filter((f) => f.id !== id))
+  }
+
+  const addField = (type) => {
+    const newField = createInvRuleCampo(type)
+    setCustomFields((prev) => [...prev, newField])
+    setAddPickerOpen(false)
+    if (type === 'select') setExpandedId(newField.id)
+    requestAnimationFrame(() => {
+      newFieldInputRef.current[newField.id]?.focus()
+    })
+  }
+
+  const appendSelectOption = (fieldId) => {
+    const raw = String(optDraft[fieldId] ?? '').trim()
+    if (!raw) return
+    setCustomFields((prev) =>
+      prev.map((f) => {
+        if (f.id !== fieldId || f.type !== 'select') return f
+        const opts = Array.isArray(f.options) ? f.options : []
+        if (opts.includes(raw)) return f
+        return { ...f, options: [...opts, raw] }
+      }),
+    )
+    setOptDraft((d) => ({ ...d, [fieldId]: '' }))
+  }
+
+  const TIPO_LABEL = {
+    text: 'Texto libre',
+    select: 'Selector',
+    number: 'Número',
+    image: 'Imagen',
+    checkbox: 'Checkbox',
+  }
+
+  const summary = useMemo(() => {
+    if (customFields.length === 0) return null
+    return customFields.map((f) => {
+      const nm = String(f.name || '').trim()
+      return nm || TIPO_LABEL[f.type] || f.type
+    })
+  }, [customFields])
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="group/campos flex min-h-[1.75rem] w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[13px] transition-colors hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:outline-none"
+        >
+          {summary ? (
+            <span className="min-w-0 flex-1 truncate text-foreground/80">{summary.join(', ')}</span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-muted-foreground/50">Sin campos extra</span>
+          )}
+          <ChevronDown
+            className="ml-auto size-3.5 shrink-0 opacity-0 transition-opacity group-hover/campos:opacity-60"
+            strokeWidth={1.75}
+            aria-hidden
+          />
+        </button>
+      </PopoverTrigger>
+
+      <PopoverContent
+        className="z-[170] w-[min(100vw-2rem,26rem)] overflow-hidden rounded-lg border border-border/60 p-0 shadow-lg"
+        align="start"
+        sideOffset={6}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+          <p className="text-[11.5px] font-medium text-muted-foreground">Campos extra del formulario</p>
+          <Popover open={addPickerOpen} onOpenChange={setAddPickerOpen} modal={false}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-dashed border-border/70 px-2 text-[11px] text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+              >
+                <Plus className="size-3" strokeWidth={2} aria-hidden />
+                Agregar
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="z-[180] w-[min(100vw-2rem,16rem)] overflow-hidden rounded-lg border border-border/60 p-0 shadow-lg"
+              align="end"
+              sideOffset={4}
+            >
+              <div className="max-h-72 overflow-y-auto py-1">
+                {INV_CAMPO_TYPES.map(({ type, label, hint, Icon }) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => addField(type)}
+                    className="flex w-full items-start gap-2.5 px-2.5 py-2 text-left text-[12.5px] transition-colors hover:bg-muted/55 dark:hover:bg-zinc-800/60"
+                  >
+                    <Icon
+                      className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/80"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-foreground">{label}</span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        <div className="max-h-72 overflow-y-auto">
+          {customFields.length === 0 ? (
+            <p className="px-3 py-5 text-center text-[12px] text-muted-foreground/60">
+              Sin campos extra. Usá «Agregar» para definir talla, medida, foto, etc.
+            </p>
+          ) : (
+            <div className="divide-y divide-border/40 py-1">
+              {customFields.map((f) => {
+                const isExpanded = expandedId === f.id
+                const tipoLabel = TIPO_LABEL[f.type] || f.type
+                const nombrePlaceholder =
+                  f.type === 'image'
+                    ? 'Nombre de la imagen…'
+                    : `Nombre del ${tipoLabel.toLowerCase()}…`
+
+                return (
+                  <div key={f.id} className="px-2 py-0.5">
+                    <div className="group/campo flex items-center gap-2 rounded-md px-1 py-1.5 transition-colors hover:bg-muted/45 dark:hover:bg-zinc-900/50">
+                      <span
+                        className="flex size-5 shrink-0 items-center justify-center text-muted-foreground/50 transition-colors group-hover/campo:text-muted-foreground/70"
+                        title={tipoLabel}
+                      >
+                        {campoTypeIcon(f.type)}
+                      </span>
+
+                      <input
+                        ref={(el) => {
+                          newFieldInputRef.current[f.id] = el
+                        }}
+                        type="text"
+                        value={f.name}
+                        onChange={(e) => patchField(f.id, { name: e.target.value })}
+                        placeholder={nombrePlaceholder}
+                        className="min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/35 focus:placeholder:text-muted-foreground/20"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => patchField(f.id, { required: !f.required })}
+                        title={f.required ? 'Marcar como opcional' : 'Marcar como requerido'}
+                        className={cn(
+                          'shrink-0 rounded px-1 py-0.5 text-[10.5px] font-medium transition-all',
+                          f.required
+                            ? 'text-destructive/70'
+                            : 'text-muted-foreground/40 opacity-0 group-hover/campo:opacity-100 hover:text-muted-foreground/70',
+                        )}
+                      >
+                        {f.required ? '* req' : 'opc'}
+                      </button>
+
+                      {f.type === 'select' ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(isExpanded ? null : f.id)}
+                          title={isExpanded ? 'Colapsar opciones' : 'Ver opciones'}
+                          className={cn(
+                            'shrink-0 rounded p-0.5 transition-all',
+                            isExpanded
+                              ? 'text-foreground/60 opacity-100'
+                              : 'text-muted-foreground/40 opacity-0 group-hover/campo:opacity-100',
+                          )}
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? 'Colapsar opciones del selector' : 'Ver opciones del selector'}
+                        >
+                          <ChevronDown
+                            className={cn('size-3 transition-transform duration-200', isExpanded && 'rotate-180')}
+                            strokeWidth={1.75}
+                          />
+                        </button>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => removeField(f.id)}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/campo:opacity-60 hover:opacity-100 focus-visible:opacity-100 hover:bg-muted/55 hover:text-destructive dark:hover:bg-zinc-800/60"
+                        aria-label="Eliminar campo"
+                      >
+                        <Trash2 className="size-3.5" strokeWidth={1.75} />
+                      </button>
+                    </div>
+
+                    {f.type === 'select' ? (
+                      <div
+                        className={cn(
+                          'grid overflow-hidden transition-[grid-template-rows] duration-200 ease-out',
+                          isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+                        )}
+                      >
+                        <div className={cn('min-h-0', !isExpanded && 'pointer-events-none')}>
+                          <div className="mb-1 ml-7 space-y-1.5 pb-1 pt-0.5">
+                            {(f.options || []).length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {(f.options || []).map((op) => (
+                                  <span
+                                    key={op}
+                                    className="inline-flex max-w-full items-center gap-0.5 rounded-[4px] border border-border/40 bg-muted/25 px-1.5 py-0.5 text-[11px] text-foreground/70"
+                                  >
+                                    <span className="truncate">{op}</span>
+                                    <button
+                                      type="button"
+                                      className="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-destructive"
+                                      onClick={() =>
+                                        patchField(f.id, {
+                                          options: (f.options || []).filter((x) => x !== op),
+                                        })
+                                      }
+                                      aria-label={`Quitar ${op}`}
+                                    >
+                                      <X className="size-2.5" strokeWidth={2.25} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-muted-foreground/45">Sin opciones aún.</p>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={optDraft[f.id] ?? ''}
+                                onChange={(e) => setOptDraft((d) => ({ ...d, [f.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    appendSelectOption(f.id)
+                                  }
+                                }}
+                                placeholder="Nueva opción… (Enter)"
+                                className="h-6 min-w-0 flex-1 rounded border border-border/40 bg-transparent px-2 text-[11.5px] text-foreground outline-none placeholder:text-muted-foreground/35 focus:border-foreground/25 transition-colors"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => appendSelectOption(f.id)}
+                                className="inline-flex h-6 items-center gap-0.5 rounded border border-dashed border-border/60 px-2 text-[11px] text-muted-foreground transition-colors hover:border-foreground/35 hover:text-foreground"
+                                aria-label="Añadir opción"
+                              >
+                                <Plus className="size-3" strokeWidth={2} aria-hidden />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 

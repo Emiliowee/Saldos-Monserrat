@@ -47,7 +47,7 @@ export function ModalPage({ open, onClose, title, description, headerRight, chil
         type="button"
         aria-label="Cerrar"
         onClick={onClose}
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity"
+        className="absolute inset-0 bg-foreground/10 backdrop-blur-[2px] transition-opacity dark:bg-background/70 dark:backdrop-blur-md"
       />
       <div
         role="dialog"
@@ -74,7 +74,7 @@ export function ModalPage({ open, onClose, title, description, headerRight, chil
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-[#f1f0ef] hover:text-foreground dark:hover:bg-zinc-800/70"
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-muted/70 hover:text-foreground dark:hover:bg-muted/55"
               aria-label="Cerrar"
             >
               <X className="size-4" strokeWidth={1.75} />
@@ -113,7 +113,7 @@ export function ModalStepper({ steps, current, onStepClick }) {
               className={cn(
                 'inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium transition-colors',
                 active && 'bg-primary/10 text-foreground',
-                done && 'text-foreground/80 hover:bg-[#f1f0ef] dark:hover:bg-zinc-800/70',
+                done && 'text-foreground/80 hover:bg-muted/70 dark:hover:bg-muted/55',
                 !done && !active && 'text-muted-foreground/70',
                 !canClick && 'cursor-default',
               )}
@@ -156,7 +156,7 @@ export function ModalNavButton({ direction = 'next', label, onClick, disabled = 
         'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         variant === 'primary'
           ? 'bg-foreground text-background hover:bg-foreground/90'
-          : 'border border-border/70 bg-transparent text-foreground/85 hover:bg-[#f3f3f2] dark:hover:bg-zinc-800/60',
+          : 'border border-border/70 bg-transparent text-foreground/85 hover:bg-muted/70 dark:hover:bg-muted/55',
       )}
     >
       {!isNext ? <ChevronLeft className="size-3.5" strokeWidth={1.75} /> : null}

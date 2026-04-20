@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion as Motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { Trash2, X, Sparkles, ImagePlus } from 'lucide-react'
+import { Trash2, X, Sparkles, ImagePlus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductLabelPreview } from '@/components/inventory/ProductLabelPreview'
 import { ProductReferencePanel } from '@/components/inventory/ProductReferencePanel'
@@ -26,7 +26,26 @@ const ALTA_PREFS_DEFAULTS = { altaAutoFillMode: 'patrones', altaAutofillPrecioCu
 function tagsKey(map) { if (!map || typeof map !== 'object') return '{}'; const keys = Object.keys(map).map(Number).filter(Number.isFinite).sort((a, b) => a - b); return JSON.stringify(keys.reduce((acc, k) => { acc[k] = map[k]; return acc }, {})) }
 function optionIdPositive(v) { if (v == null || v === '') return false; const n = Number(v); return Number.isFinite(n) && n > 0 }
 function hasAnyTagSelected(map) { if (!map || typeof map !== 'object') return false; return Object.values(map).some(optionIdPositive) }
-function mapApiProductToDraft(full) { const pu = full.pieza_unica == null ? true : Number(full.pieza_unica) === 1 || full.pieza_unica === true; const st = Number(full.stock); return { id: full.id, codigo: full.codigo ?? '', descripcion: full.descripcion ?? '', precio: full.precio != null ? String(full.precio) : '', estado: String(full.estado || 'disponible').toLowerCase(), imagen_path: full.imagen_path ?? '', tagsByGroup: full.tagsByGroup && typeof full.tagsByGroup === 'object' ? full.tagsByGroup : {}, ruleId: full.ruleId ?? null, pieza_unica: pu, stock: Number.isFinite(st) && st >= 1 ? Math.floor(st) : 1 } }
+function mapApiProductToDraft(full) {
+  const pu = full.pieza_unica == null ? true : Number(full.pieza_unica) === 1 || full.pieza_unica === true
+  const st = Number(full.stock)
+  return {
+    id: full.id,
+    codigo: full.codigo ?? '',
+    descripcion: full.descripcion ?? '',
+    precio: full.precio != null ? String(full.precio) : '',
+    estado: String(full.estado || 'disponible').toLowerCase(),
+    imagen_path: full.imagen_path ?? '',
+    tagsByGroup: full.tagsByGroup && typeof full.tagsByGroup === 'object' ? full.tagsByGroup : {},
+    ruleId: full.ruleId ?? null,
+    ruleFieldValues:
+      full.ruleFieldValues && typeof full.ruleFieldValues === 'object' && !Array.isArray(full.ruleFieldValues)
+        ? { ...full.ruleFieldValues }
+        : {},
+    pieza_unica: pu,
+    stock: Number.isFinite(st) && st >= 1 ? Math.floor(st) : 1,
+  }
+}
 
 export function InventoryProductDrawer({ open, draft, setDraft, onSave, onClose, onDelete, onRefreshInventory, onClearForm, onProductLoadedFromLookup }) {
   const [tab, setTab] = useState('principal')
@@ -170,9 +189,15 @@ export function InventoryProductDrawer({ open, draft, setDraft, onSave, onClose,
                     <InventoryPropertyEditor
                       ruleId={draft.ruleId ?? null}
                       tagsByGroup={draft.tagsByGroup}
-                      onChange={({ ruleId, tagsByGroup }) => {
+                      ruleFieldValues={draft.ruleFieldValues}
+                      onChange={({ ruleId, tagsByGroup, ruleFieldValues: rv }) => {
                         lastAutofillKey.current = ''
-                        setDraft((d) => ({ ...d, ruleId: ruleId ?? null, tagsByGroup }))
+                        setDraft((d) => ({
+                          ...d,
+                          ruleId: ruleId ?? null,
+                          tagsByGroup,
+                          ...(rv !== undefined ? { ruleFieldValues: rv } : {}),
+                        }))
                       }}
                     />
 
@@ -267,7 +292,10 @@ export function InventoryProductDrawer({ open, draft, setDraft, onSave, onClose,
               {/* Footer */}
               <div className="flex items-center justify-end gap-2 px-5 py-3 border-t shrink-0">
                 <Button variant="ghost" size="sm" className="text-[11px]" onClick={onClose}>Cancelar</Button>
-                <Button size="sm" className="text-[11px]" disabled={saveBusy} onClick={handleSaveClick}>{saveBusy ? 'Guardando…' : 'Guardar'}</Button>
+                <Button size="sm" className="text-[11px] inline-flex items-center gap-1.5" disabled={saveBusy} onClick={handleSaveClick}>
+                  {saveBusy ? <RefreshCw className="size-3.5 shrink-0 animate-spin" aria-hidden /> : null}
+                  {saveBusy ? 'Guardando…' : 'Guardar'}
+                </Button>
               </div>
             </Motion.aside>
         )}

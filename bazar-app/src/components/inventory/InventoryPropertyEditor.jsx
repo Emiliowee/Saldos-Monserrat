@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, ListChecks, Sparkles, Settings2, X } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  Check,
+  CheckSquare,
+  ChevronDown,
+  Hash,
+  ImagePlus,
+  List,
+  ListChecks,
+  Settings2,
+  Sparkles,
+  Type,
+  X,
+} from 'lucide-react'
 import { TagGlyph } from '@/components/TagGlyph'
 import {
   Dialog,
@@ -36,7 +49,7 @@ import {
  *  - Modo regla: el ancla queda fija, y solo se ven los grupos del scope con
  *    las opciones que aparecen como companion en alguna fila de la regla.
  */
-export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
+export function InventoryPropertyEditor({ ruleId, tagsByGroup, ruleFieldValues, onChange }) {
   const [rules, setRules] = useState([])
   const [groups, setGroups] = useState([])
   const [ruleDetail, setRuleDetail] = useState(null)
@@ -46,6 +59,7 @@ export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
   const [modalOpen, setModalOpen] = useState(false)
 
   const safeTags = tagsByGroup && typeof tagsByGroup === 'object' ? tagsByGroup : {}
+  const ruleVals = ruleFieldValues && typeof ruleFieldValues === 'object' && !Array.isArray(ruleFieldValues) ? ruleFieldValues : {}
 
   useEffect(() => {
     let cancel = false
@@ -56,7 +70,11 @@ export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
           window.bazar?.db?.getTagGroupsForProduct?.() ?? [],
         ])
         if (cancel) return
-        setRules(Array.isArray(rs) ? rs.filter((r) => r.active && r.row_count > 0) : [])
+        setRules(
+          Array.isArray(rs)
+            ? rs.filter((r) => r.active && (r.row_count > 0 || (r.custom_field_count || 0) > 0))
+            : [],
+        )
         setGroups(Array.isArray(gs) ? gs : [])
       } catch {
         if (!cancel) {
@@ -128,8 +146,32 @@ export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
         .sort((a, b) => a - b)
         .reduce((acc, k) => ((acc[k] = next[k]), acc), {}),
     )
-    if (prevKey !== nextKey) onChange?.({ ruleId, tagsByGroup: next })
+    if (prevKey !== nextKey) onChange?.({ ruleId, tagsByGroup: next, ruleFieldValues: ruleVals })
   }, [ruleDetail, groups]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ruleFieldsSig = useMemo(
+    () => JSON.stringify((ruleDetail?.customFields || []).map((f) => ({ id: f.id, type: f.type }))),
+    [ruleDetail],
+  )
+  useEffect(() => {
+    if (!ruleId || !ruleDetail) return
+    const rv = ruleFieldValues && typeof ruleFieldValues === 'object' && !Array.isArray(ruleFieldValues) ? ruleFieldValues : {}
+    const cfs = Array.isArray(ruleDetail.customFields) ? ruleDetail.customFields : []
+    if (cfs.length === 0) {
+      if (Object.keys(rv).length > 0) onChange?.({ ruleId, tagsByGroup: safeTags, ruleFieldValues: {} })
+      return
+    }
+    const allowed = new Set(cfs.map((f) => f.id))
+    const next = { ...rv }
+    let changed = false
+    for (const k of Object.keys(next)) {
+      if (!allowed.has(k)) {
+        delete next[k]
+        changed = true
+      }
+    }
+    if (changed) onChange?.({ ruleId, tagsByGroup: safeTags, ruleFieldValues: next })
+  }, [ruleId, ruleDetail?.id, ruleFieldsSig, ruleFieldValues, safeTags, onChange])
 
   const visibleGroups = useMemo(() => {
     if (!ruleDetail) {
@@ -160,19 +202,30 @@ export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
       const next = { ...safeTags }
       if (oid == null || oid === 0 || oid === '') delete next[gid]
       else next[gid] = Number(oid)
-      onChange?.({ ruleId: ruleId || null, tagsByGroup: next })
+      onChange?.({ ruleId: ruleId || null, tagsByGroup: next, ruleFieldValues: ruleVals })
     },
-    [safeTags, onChange, ruleId],
+    [safeTags, onChange, ruleId, ruleVals],
   )
 
   const handleRuleChange = (nextRuleId) => {
     if (nextRuleId === ruleId) return
     if (!nextRuleId) {
-      onChange?.({ ruleId: null, tagsByGroup: safeTags })
+      onChange?.({ ruleId: null, tagsByGroup: safeTags, ruleFieldValues: {} })
       return
     }
-    onChange?.({ ruleId: Number(nextRuleId), tagsByGroup: safeTags })
+    onChange?.({ ruleId: Number(nextRuleId), tagsByGroup: safeTags, ruleFieldValues: {} })
   }
+
+  const setRuleFieldValue = useCallback(
+    (fieldId, value) => {
+      onChange?.({
+        ruleId: ruleId || null,
+        tagsByGroup: safeTags,
+        ruleFieldValues: { ...ruleVals, [fieldId]: value },
+      })
+    },
+    [onChange, ruleId, safeTags, ruleVals],
+  )
 
   const activeRule = rules.find((r) => r.id === ruleId) || null
 
@@ -416,6 +469,17 @@ export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
               )
             })}
 
+            {ruleId && !ruleDetailLoading && Array.isArray(ruleDetail?.customFields) && ruleDetail.customFields.length > 0 ? (
+              <div className="divide-y divide-border/50 border-t border-border/40">
+                <div className="bg-muted/15 px-5 py-2">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Campos de la regla</p>
+                </div>
+                {ruleDetail.customFields.map((f) => (
+                  <InvRuleFieldValueRow key={f.id} field={f} value={ruleVals[f.id]} onChange={(v) => setRuleFieldValue(f.id, v)} />
+                ))}
+              </div>
+            ) : null}
+
             {visibleGroups.rest.length === 0 && !visibleGroups.anchor ? (
               <div className="px-5 py-6 text-center text-[12px] text-muted-foreground">
                 No hay propiedades definidas. Creá grupos y tags desde el Cuaderno.
@@ -440,6 +504,140 @@ export function InventoryPropertyEditor({ ruleId, tagsByGroup, onChange }) {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function InvRuleFieldValueRow({ field, value, onChange }) {
+  const t = field?.type || 'text'
+  const label = String(field?.name || 'Campo')
+  const req = field.required ? <span className="text-destructive"> *</span> : null
+  const rowCls = 'grid grid-cols-1 gap-2 px-5 py-2.5 sm:grid-cols-[minmax(0,38%)_1fr] sm:items-center sm:gap-3'
+  const labelWrap = (
+    <div className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-muted-foreground">
+      {t === 'text' ? <Type className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden /> : null}
+      {t === 'select' ? <List className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden /> : null}
+      {t === 'number' ? <Hash className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden /> : null}
+      {t === 'image' ? <ImagePlus className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden /> : null}
+      {t === 'checkbox' ? <CheckSquare className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden /> : null}
+      <span className="truncate">
+        {label}
+        {req}
+      </span>
+    </div>
+  )
+  const inputCls =
+    'h-8 w-full rounded-md border border-border/70 bg-background px-2 text-[12.5px] outline-none focus:border-foreground/40 focus:ring-1 focus:ring-ring/30'
+
+  if (t === 'number') {
+    return (
+      <div className={rowCls}>
+        {labelWrap}
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value == null ? '' : String(value)}
+          onChange={(e) => onChange(e.target.value)}
+          className={inputCls}
+        />
+      </div>
+    )
+  }
+  if (t === 'select') {
+    const opts = Array.isArray(field.options) ? field.options : []
+    const cur = value == null ? '' : String(value)
+    return (
+      <div className={rowCls}>
+        {labelWrap}
+        <select value={cur} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+          <option value="">{field.required ? 'Elegir…' : '—'}</option>
+          {opts.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      </div>
+    )
+  }
+  if (t === 'checkbox') {
+    const v = typeof value === 'boolean' ? value : null
+    return (
+      <div className={rowCls}>
+        {labelWrap}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onChange(true)}
+            className={cn(
+              'rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+              v === true ? 'border-foreground/40 bg-foreground/5 text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/50',
+            )}
+          >
+            Sí
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange(false)}
+            className={cn(
+              'rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors',
+              v === false ? 'border-foreground/40 bg-foreground/5 text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/50',
+            )}
+          >
+            No
+          </button>
+          {!field.required ? (
+            <button type="button" onClick={() => onChange(null)} className="text-[11px] text-muted-foreground underline-offset-2 hover:underline">
+              Limpiar
+            </button>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+  if (t === 'image') {
+    const path = value == null ? '' : String(value)
+    const short = path.replace(/^.*[/\\]/, '')
+    return (
+      <div className={rowCls}>
+        {labelWrap}
+        <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background px-2.5 text-[11.5px] font-medium hover:bg-muted/50"
+              onClick={async () => {
+                const api = window.bazar?.productImage?.pick
+                if (typeof api !== 'function') {
+                  toast.error('Elegir imagen solo en la app de escritorio.')
+                  return
+                }
+                try {
+                  const res = await api()
+                  if (res?.cancelled || !res?.path) return
+                  onChange(String(res.path))
+                } catch (e) {
+                  toast.error(String(e?.message || e))
+                }
+              }}
+            >
+              Elegir imagen…
+            </button>
+            {path ? (
+              <button type="button" className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => onChange('')}>
+                Quitar
+              </button>
+            ) : null}
+          </div>
+          {short ? <span className="truncate text-[11px] text-muted-foreground">{short}</span> : null}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className={rowCls}>
+      {labelWrap}
+      <input type="text" value={value == null ? '' : String(value)} onChange={(e) => onChange(e.target.value)} className={inputCls} />
+    </div>
   )
 }
 

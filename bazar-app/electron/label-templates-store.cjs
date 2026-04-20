@@ -87,6 +87,7 @@ function createLabelTemplatesStore(userDataPath) {
       const templates = data.templates.map(normalizeTemplate)
       const migrated = migrateLegacyDefaultLayout(templates)
       const merged = ensureBuiltinsMerged(templates)
+      /* No volver a insertar logo en builtins al leer: si el usuario borró el bloque y guardó, debe persistir. */
       if (migrated || merged) {
         const hasActive = templates.some((t) => t.id === data.activeId)
         const out = {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Package,
   Plus,
@@ -18,7 +18,9 @@ import { toast } from 'sonner'
 import { InventoryProductPage } from '@/components/inventory/InventoryProductPage'
 import { PriceAdjustDialog } from '@/components/inventory/PriceAdjustDialog'
 import { formatPrice } from '@/lib/format'
+import { appConfirm } from '@/lib/appConfirm'
 import { releaseModalBodyLocks } from '@/lib/releaseModalBodyLocks'
+import { ipcErrorMessage } from '@/lib/ipcErrorMessage'
 import {
   PageHeader,
   PageHeaderDivider,
@@ -87,8 +89,30 @@ function EstadoBadge({ raw }) {
 }
 
 function emptyDraft() {
-  return { id: null, codigo: '', descripcion: '', precio: '', estado: 'disponible', imagen_path: '', tagsByGroup: {}, ruleId: null, pieza_unica: true, stock: 1 }
+  return {
+    id: null,
+    codigo: '',
+    descripcion: '',
+    precio: '',
+    estado: 'disponible',
+    imagen_path: '',
+    tagsByGroup: {},
+    ruleId: null,
+    ruleFieldValues: {},
+    pieza_unica: true,
+    stock: 1,
+    venta_items_count: 0,
+    baja_estado_manual_en: null,
+  }
 }
+
+function invVentaItemsCount(row) {
+  const n = Number(row?.venta_items_count)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+const MSG_DELETE_BLOCKED_POS =
+  'Este artículo tiene al menos una línea en ventas del POS: el comprobante sigue vinculado a este registro. Por eso no se puede borrar, aunque lo marques «Disponible» otra vez. (Si solo habías puesto «Vendido» a mano en la ficha y nunca pasó por el POS, no hay esas líneas y el borrado puede estar permitido.)'
 
 function parsePrecio(text) {
   const t = String(text ?? '').trim().replace(',', '.')
@@ -116,7 +140,198 @@ function draftHasAnyTag(map) {
 }
 
 function normPiezaUnica(v) { return v == null ? true : typeof v === 'boolean' ? v : Number(v) === 1 }
-function normStock(row) { const n = Number(row?.stock); return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1 }
+/** Stock real en BD (incluye 0); solo cae a 1 si el valor es inválido. */
+function normStock(row) {
+  const n = Number(row?.stock)
+  if (Number.isFinite(n) && n >= 0) return Math.floor(n)
+  return 1
+}
+
+function invRowId(row) {
+  const n = Number(row?.id)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Tags de lista inventario como pills compactas (CSV desde API). */
+function InvTagPills({ tagsCsv, max = 999 }) {
+  const parts = String(tagsCsv ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (parts.length === 0) {
+    return <span className="text-muted-foreground/70">—</span>
+  }
+  const cap = Number.isFinite(Number(max)) && Number(max) > 0 ? Math.floor(Number(max)) : 999
+  const visible = parts.slice(0, cap)
+  const hidden = parts.length - visible.length
+  return (
+    <span className="flex max-w-full flex-wrap items-center gap-1">
+      {visible.map((t, i) => (
+        <span
+          key={`${i}-${t}`}
+          className="inline-flex max-w-[9rem] shrink-0 truncate rounded-md border border-border/55 bg-muted/35 px-1.5 py-0.5 text-[10.5px] font-medium text-foreground/85 dark:bg-zinc-800/55"
+          title={t}
+        >
+          {t}
+        </span>
+      ))}
+      {hidden > 0 ? (
+        <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground/80" title={parts.join(', ')}>
+          +{hidden}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+/**
+ * Arma payload de alta/edición: validación + autocompletado nombre/precio + reglas.
+ * @returns {Promise<{ ok: true, payload: object, esNuevo: boolean, editId: number } | { ok: false, error: string }>}
+ */
+async function buildInventorySavePayload(api, d) {
+  if (!draftHasAnyTag(d.tagsByGroup)) return { ok: false, error: 'Elegí al menos un tag.' }
+  const codigo = String(d.codigo ?? '').trim()
+  if (!codigo) return { ok: false, error: 'El código es obligatorio' }
+  let descripcion = String(d.descripcion ?? '').trim()
+  if (!descripcion && api.suggestNombreFromTags) {
+    try {
+      const raw = await window.bazar?.settings?.get?.()
+      const st = raw && typeof raw === 'object' ? raw : {}
+      if (st.altaAutofillNombreDesdeTags !== false) {
+        const sn = await api.suggestNombreFromTags({ tagsByGroup: d.tagsByGroup, excludeCodigo: codigo || undefined })
+        if (sn && String(sn).trim()) descripcion = String(sn).trim()
+      }
+      if (!descripcion && api.getNombreEtiquetaDesdeTags) {
+        const et = await api.getNombreEtiquetaDesdeTags({ tagsByGroup: d.tagsByGroup })
+        if (et && String(et).trim()) descripcion = String(et).trim()
+      }
+    } catch { /* ignore */ }
+  }
+  if (!descripcion) return { ok: false, error: 'El nombre / descripción es obligatorio' }
+
+  let precio = parsePrecio(d.precio)
+  if (precio === null && api.suggestPrecioFromTags) {
+    try {
+      const raw = await window.bazar?.settings?.get?.()
+      const st = raw && typeof raw === 'object' ? raw : {}
+      const mode = st.altaAutoFillMode || 'patrones'
+      if (mode !== 'off') {
+        const skipC = st.altaAutofillPrecioCuaderno === false
+        const skipP = st.altaAutofillPrecioPatrones === false
+        let precioVal = null
+        if (mode === 'cuaderno' && !skipC) {
+          precioVal = await api.suggestPrecioFromTags({
+            tagsByGroup: d.tagsByGroup,
+            mode: 'cuaderno',
+            excludeCodigo: codigo || undefined,
+          })
+        } else if (mode === 'patrones' && !skipP) {
+          precioVal = await api.suggestPrecioFromTags({
+            tagsByGroup: d.tagsByGroup,
+            mode: 'patrones',
+            excludeCodigo: codigo || undefined,
+          })
+        }
+        if (precioVal != null && Number.isFinite(Number(precioVal))) precio = Number(precioVal)
+      }
+    } catch { /* ignore */ }
+  }
+  if (precio === null) return { ok: false, error: 'Indica un precio válido (número ≥ 0)' }
+
+  if (d.ruleId && typeof api.getInvPricingRule === 'function') {
+    try {
+      const rule = await api.getInvPricingRule({ id: Number(d.ruleId) })
+      const cfs = Array.isArray(rule?.customFields) ? rule.customFields : []
+      const vals =
+        d.ruleFieldValues && typeof d.ruleFieldValues === 'object' && !Array.isArray(d.ruleFieldValues)
+          ? d.ruleFieldValues
+          : {}
+      for (const f of cfs) {
+        if (!f.required) continue
+        const v = vals[f.id]
+        let ok = true
+        if (f.type === 'checkbox') ok = typeof v === 'boolean'
+        else if (f.type === 'number') {
+          const s = String(v ?? '').trim().replace(',', '.')
+          ok = s !== '' && Number.isFinite(Number(s))
+        } else if (f.type === 'select') {
+          const opts = Array.isArray(f.options) ? f.options : []
+          ok = typeof v === 'string' && opts.includes(v)
+        } else if (f.type === 'image') ok = typeof v === 'string' && v.trim().length > 0
+        else ok = typeof v === 'string' && v.trim().length > 0
+        if (!ok) {
+          return {
+            ok: false,
+            error: `Completá el campo obligatorio de la regla: «${String(f.name || '').trim() || 'Campo'}».`,
+          }
+        }
+      }
+    } catch {
+      /* si falla la regla, no bloqueamos el guardado */
+    }
+  }
+
+  const esNuevo = d.id == null
+  const editId = Number(d.id)
+  const tagsByGroup = d.tagsByGroup && typeof d.tagsByGroup === 'object' ? { ...d.tagsByGroup } : {}
+  const pieza_unica = d.pieza_unica !== false
+  let stock = Math.max(1, Math.floor(Number(String(d.stock ?? '').replace(',', '.')) || 1))
+  if (pieza_unica) stock = 1
+  const ruleIdVal =
+    d.ruleId != null && String(d.ruleId).trim() !== '' && Number.isFinite(Number(d.ruleId)) && Number(d.ruleId) > 0
+      ? Math.floor(Number(d.ruleId))
+      : null
+  const ruleFieldValues =
+    d.ruleFieldValues && typeof d.ruleFieldValues === 'object' && !Array.isArray(d.ruleFieldValues)
+      ? { ...d.ruleFieldValues }
+      : {}
+  const payload = {
+    codigo,
+    descripcion,
+    precio,
+    estado: esNuevo ? 'disponible' : String(d.estado ?? 'disponible'),
+    imagen_path: String(d.imagen_path ?? '').trim(),
+    tagsByGroup,
+    ruleId: ruleIdVal,
+    ruleFieldValues,
+    pieza_unica,
+    stock,
+  }
+  return { ok: true, payload, esNuevo, editId }
+}
+
+async function persistInventoryProduct(api, built, { closePage, refresh }) {
+  const { payload, esNuevo, editId } = built
+  if (esNuevo) {
+    await api.addProduct(payload)
+    toast.success('Artículo creado')
+    try {
+      const st = await window.bazar?.settings?.get?.()
+      if (st?.printLabelAfterSave && window.bazar?.printers?.printLabel) {
+        void window.bazar.printers
+          .printLabel({ codigo: payload.codigo, nombre: payload.descripcion, precio: payload.precio })
+          .then((res) => {
+            if (res?.ok) toast.message(res.message || 'Etiqueta PDF en Descargas')
+            else if (res?.message) toast.error(res.message)
+          })
+          .catch(() => {
+            toast.error('No se pudo generar la etiqueta PDF')
+          })
+      }
+    } catch {
+      /* no bloquea */
+    }
+  } else {
+    if (!Number.isFinite(editId) || editId <= 0) {
+      toast.error('Identificador de artículo no válido.')
+      return
+    }
+    await api.updateProduct({ ...payload, id: editId })
+    toast.success('Guardado')
+  }
+  closePage()
+  await refresh()
+}
 
 export function InventoryView() {
   const [rows, setRows] = useState([])
@@ -124,6 +339,11 @@ export function InventoryView() {
   const qRef = useRef('')
   const inventorySearchRef = useRef(null)
   const listReqRef = useRef(0)
+  /** Evita doble `openEdit` (StrictMode + sessionStorage + evento en la misma navegación). */
+  const openingInventoryProductRef = useRef(null)
+  /** Evita doble `openNew` al abrir alta desde Home / paleta. */
+  const newProductBootstrapRef = useRef(false)
+  const viewAliveRef = useRef(true)
   const [estadoIndex, setEstadoIndex] = useState(0)
   const [vistaIndex, setVistaIndex] = useState(0)
   const [listTab, setListTab] = useState('main')
@@ -150,6 +370,12 @@ export function InventoryView() {
     if (parsed.listTab === 'stale' || parsed.listTab === 'main') setListTab(parsed.listTab)
   }, [])
 
+  // Vista «Banqueta» ya filtra por `en_banqueta`; un chip de estado incompatible (p. ej. Vendido) vacía la lista sin que quede claro por qué.
+  useEffect(() => {
+    if (vistaIndex !== 1) return
+    if (estadoIndex !== 0 && estadoIndex !== 2) setEstadoIndex(0)
+  }, [vistaIndex, estadoIndex])
+
   const refresh = useCallback(async (searchOverride) => {
     const api = window.bazar?.db
     if (!api?.getInventoryList) { setRows([]); return }
@@ -161,38 +387,107 @@ export function InventoryView() {
     try {
       const data = await api.getInventoryList({ search, estadoIndex, vistaIndex, listTab })
       if (reqId !== listReqRef.current) return
-      setRows(Array.isArray(data) ? data : [])
+      if (!viewAliveRef.current) return
+      const nextRows = Array.isArray(data) ? data : []
+      const visibleIds = new Set(
+        nextRows.map((r) => invRowId(r)).filter((id) => id != null),
+      )
+      // Transición baja la prioridad frente a la escritura en la búsqueda (p. ej. tras borrar y listas grandes).
+      startTransition(() => {
+        setRows(nextRows)
+        // Tras cambiar búsqueda/filtros, la selección debe quedar solo sobre filas visibles;
+        // si no, «Eliminar» actúa sobre ids que ya no coinciden con lo que el usuario ve.
+        setSelectedIds((prev) => {
+          if (prev.size === 0) return prev
+          const next = new Set()
+          for (const x of prev) {
+            const n = Number(x)
+            if (Number.isFinite(n) && n > 0 && visibleIds.has(n)) next.add(n)
+          }
+          return next.size === prev.size ? prev : next
+        })
+        setFocusedId((cur) => {
+          if (cur == null) return cur
+          const n = Number(cur)
+          return Number.isFinite(n) && n > 0 && visibleIds.has(n) ? n : null
+        })
+      })
     } catch (e) {
       if (reqId !== listReqRef.current) return
-      toast.error(String(e.message || e))
+      if (!viewAliveRef.current) return
+      toast.error(ipcErrorMessage(e))
     }
   }, [estadoIndex, vistaIndex, listTab])
 
   useEffect(() => {
-    const t = setTimeout(() => { void refresh(q) }, 240)
-    return () => clearTimeout(t)
-  }, [q, refresh])
+    viewAliveRef.current = true
+    return () => {
+      viewAliveRef.current = false
+    }
+  }, [])
 
-  useEffect(() => { void refresh() }, [estadoIndex, vistaIndex, listTab, refresh])
+  // Filtros: limpiar selección (evita ids invisibles) y refresco inmediato. Texto: debounce aparte.
+  useEffect(() => {
+    setSelectedIds(new Set())
+    void refresh()
+  }, [estadoIndex, vistaIndex, listTab, refresh])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void refresh(q)
+    }, 200)
+    return () => window.clearTimeout(t)
+  }, [q, refresh])
 
   const openEdit = useCallback(async (row) => {
     if (!row) return
-    const api = window.bazar?.db
-    if (api?.getProductById) {
-      try {
-        const full = await api.getProductById(row.id)
-        if (full) {
-          setDraft({ id: full.id, codigo: full.codigo ?? '', descripcion: full.descripcion ?? '', precio: full.precio != null ? String(full.precio) : '', estado: String(full.estado || 'disponible').toLowerCase(), imagen_path: full.imagen_path ?? '', tagsByGroup: full.tagsByGroup && typeof full.tagsByGroup === 'object' ? full.tagsByGroup : {}, pieza_unica: normPiezaUnica(full.pieza_unica), stock: normStock(full) })
-          setFocusedId(row.id)
-          setProductPage({ mode: 'edit', id: row.id })
-          return
-        }
-      } catch (e) { toast.error(String(e.message || e)) }
+    const id = invRowId(row)
+    if (id == null) {
+      toast.error('Identificador de artículo no válido.')
+      return
     }
-    setDraft({ id: row.id, codigo: row.codigo ?? '', descripcion: row.descripcion ?? '', precio: row.precio != null ? String(row.precio) : '', estado: String(row.estado || 'disponible').toLowerCase(), imagen_path: row.imagen_path ?? '', tagsByGroup: {}, pieza_unica: normPiezaUnica(row.pieza_unica), stock: normStock(row) })
-    setFocusedId(row.id)
-    setProductPage({ mode: 'edit', id: row.id })
-  }, [])
+    const api = window.bazar?.db
+    if (!api?.getProductById) {
+      toast.error('Base de datos no disponible.')
+      return
+    }
+    try {
+      const full = await api.getProductById(id)
+      if (!full) {
+        toast.error('No se encontró el artículo (puede haber sido eliminado).')
+        void refresh()
+        return
+      }
+      const draftId = invRowId(full)
+      const focusId = draftId ?? id
+      if (focusId == null || !Number.isFinite(Number(focusId)) || Number(focusId) <= 0) {
+        toast.error('El artículo devolvió un id no válido.')
+        return
+      }
+      setDraft({
+        id: focusId,
+        codigo: full.codigo ?? '',
+        descripcion: full.descripcion ?? '',
+        precio: full.precio != null ? String(full.precio) : '',
+        estado: String(full.estado || 'disponible').toLowerCase(),
+        imagen_path: full.imagen_path ?? '',
+        tagsByGroup: full.tagsByGroup && typeof full.tagsByGroup === 'object' ? full.tagsByGroup : {},
+        ruleId: full.ruleId ?? null,
+        ruleFieldValues:
+          full.ruleFieldValues && typeof full.ruleFieldValues === 'object' && !Array.isArray(full.ruleFieldValues)
+            ? { ...full.ruleFieldValues }
+            : {},
+        pieza_unica: normPiezaUnica(full.pieza_unica),
+        stock: normStock(full),
+        venta_items_count: invVentaItemsCount(full),
+        baja_estado_manual_en: full.baja_estado_manual_en != null && String(full.baja_estado_manual_en).trim() !== '' ? String(full.baja_estado_manual_en) : null,
+      })
+      setFocusedId(focusId)
+      setProductPage({ mode: 'edit', id: focusId })
+    } catch (e) {
+      toast.error(ipcErrorMessage(e))
+    }
+  }, [refresh])
 
   const openNew = useCallback(async () => {
     const base = emptyDraft()
@@ -203,25 +498,63 @@ export function InventoryView() {
     setProductPage({ mode: 'new' })
   }, [])
 
-  const loadProductFromLookup = (next) => { setDraft(next); setFocusedId(next.id) }
+  const loadProductFromLookup = (next) => {
+    setDraft(next)
+    const nid = invRowId(next)
+    if (nid != null) setFocusedId(nid)
+  }
 
   useEffect(() => {
-    let raw; try { raw = sessionStorage.getItem('bazar.inventoryOpenProductId') } catch { return }
-    if (!raw) return; try { sessionStorage.removeItem('bazar.inventoryOpenProductId') } catch { /* noop */ }
-    const id = Number(raw); if (!Number.isFinite(id)) return
-    void openEdit({ id })
-  }, [openEdit])
-
-  useEffect(() => { try { const flag = sessionStorage.getItem('bazar.inventoryNewProduct'); if (flag) { sessionStorage.removeItem('bazar.inventoryNewProduct'); void openNew() } } catch { /* noop */ } }, [openNew])
-
-  useEffect(() => {
+    const runOpen = (rawId) => {
+      const id = Number(rawId)
+      if (!Number.isFinite(id) || id <= 0) return
+      if (openingInventoryProductRef.current === id) return
+      openingInventoryProductRef.current = id
+      void (async () => {
+        try {
+          await openEdit({ id })
+        } finally {
+          openingInventoryProductRef.current = null
+        }
+      })()
+    }
     const onScan = (e) => {
-      const id = e?.detail; if (id == null) return
-      void openEdit({ id: Number(id) })
+      if (e?.detail == null) return
+      runOpen(e.detail)
     }
     window.addEventListener('bazar:inventory-open-product', onScan)
     return () => window.removeEventListener('bazar:inventory-open-product', onScan)
   }, [openEdit])
+
+  useEffect(() => {
+    let cancelled = false
+    if (newProductBootstrapRef.current) return
+    let raw
+    try {
+      raw = sessionStorage.getItem('bazar.inventoryNewProduct')
+    } catch {
+      return
+    }
+    if (!raw) return
+    newProductBootstrapRef.current = true
+    void (async () => {
+      try {
+        if (!cancelled) await openNew()
+      } finally {
+        newProductBootstrapRef.current = false
+        if (!cancelled) {
+          try {
+            sessionStorage.removeItem('bazar.inventoryNewProduct')
+          } catch {
+            /* noop */
+          }
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [openNew])
 
   const closePage = useCallback(() => {
     setProductPage(null)
@@ -250,91 +583,139 @@ export function InventoryView() {
   }, [priceDialogOpen])
 
   const save = useCallback(async () => {
-    const d = draftRef.current; const api = window.bazar?.db
-    if (!api?.addProduct || !api?.updateProduct) { toast.error('Base de datos no disponible.'); return }
-    if (!draftHasAnyTag(d.tagsByGroup)) { toast.error('Elegí al menos un tag.'); return }
-    const codigo = String(d.codigo ?? '').trim()
-    if (!codigo) { toast.error('El código es obligatorio'); return }
-    let descripcion = String(d.descripcion ?? '').trim()
-    if (!descripcion && api.suggestNombreFromTags) {
-      try {
-        const raw = await window.bazar?.settings?.get?.(); const st = raw && typeof raw === 'object' ? raw : {}
-        if (st.altaAutofillNombreDesdeTags !== false) { const sn = await api.suggestNombreFromTags({ tagsByGroup: d.tagsByGroup, excludeCodigo: codigo || undefined }); if (sn && String(sn).trim()) descripcion = String(sn).trim() }
-        if (!descripcion && api.getNombreEtiquetaDesdeTags) { const et = await api.getNombreEtiquetaDesdeTags({ tagsByGroup: d.tagsByGroup }); if (et && String(et).trim()) descripcion = String(et).trim() }
-      } catch { /* ignore */ }
+    const d = draftRef.current
+    const api = window.bazar?.db
+    if (!api?.addProduct || !api?.updateProduct) {
+      toast.error('Base de datos no disponible.')
+      return
     }
-    if (!descripcion) { toast.error('El nombre / descripción es obligatorio'); return }
-    let precio = parsePrecio(d.precio)
-    if (precio === null && api.suggestPrecioFromTags) {
-      try {
-        const raw = await window.bazar?.settings?.get?.(); const st = raw && typeof raw === 'object' ? raw : {}
-        const mode = st.altaAutoFillMode || 'patrones'
-        if (mode !== 'off') {
-          const skipC = st.altaAutofillPrecioCuaderno === false; const skipP = st.altaAutofillPrecioPatrones === false; let precioVal = null
-          if (mode === 'cuaderno' && !skipC) precioVal = await api.suggestPrecioFromTags({ tagsByGroup: d.tagsByGroup, mode: 'cuaderno', excludeCodigo: codigo || undefined })
-          else if (mode === 'patrones' && !skipP) precioVal = await api.suggestPrecioFromTags({ tagsByGroup: d.tagsByGroup, mode: 'patrones', excludeCodigo: codigo || undefined })
-          if (precioVal != null && Number.isFinite(Number(precioVal))) precio = Number(precioVal)
-        }
-      } catch { /* ignore */ }
+    const built = await buildInventorySavePayload(api, d)
+    if (built.ok === false) {
+      toast.error(built.error)
+      return
     }
-    if (precio === null) { toast.error('Indica un precio válido (número ≥ 0)'); return }
-    const esNuevo = d.id == null
-    const tagsByGroup = d.tagsByGroup && typeof d.tagsByGroup === 'object' ? { ...d.tagsByGroup } : {}
-    const pieza_unica = d.pieza_unica !== false
-    let stock = Math.max(1, Math.floor(Number(String(d.stock ?? '').replace(',', '.')) || 1)); if (pieza_unica) stock = 1
-    const payload = { codigo, descripcion, precio, estado: esNuevo ? 'disponible' : String(d.estado ?? 'disponible'), imagen_path: String(d.imagen_path ?? '').trim(), tagsByGroup, pieza_unica, stock }
     try {
-      if (esNuevo) {
-        await api.addProduct(payload); toast.success('Artículo creado')
-        try { const st = await window.bazar?.settings?.get?.(); if (st?.printLabelAfterSave && window.bazar?.printers?.printLabel) { void window.bazar.printers.printLabel({ codigo: payload.codigo, nombre: payload.descripcion, precio: payload.precio }).then((res) => { if (res?.ok) toast.message(res.message || 'Etiqueta PDF en Descargas'); else if (res?.message) toast.error(res.message) }).catch(() => { toast.error('No se pudo generar la etiqueta PDF') }) } } catch { /* no bloquea */ }
-      } else { await api.updateProduct({ ...payload, id: d.id }); toast.success('Guardado') }
-      closePage(); await refresh()
-    } catch (e) { const raw = typeof e === 'string' ? e : e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e); toast.error(raw && raw !== '[object Object]' ? raw : 'No se pudo guardar.') }
+      await persistInventoryProduct(api, built, { closePage, refresh })
+    } catch (e) {
+      const raw = ipcErrorMessage(e)
+      toast.error(raw && raw !== '[object Object]' ? raw : 'No se pudo guardar.')
+    }
   }, [closePage, refresh])
 
-  const deleteOne = useCallback(async (id, codigo) => {
+  const deleteOne = useCallback(async (id, codigo, metaRow) => {
     const api = window.bazar?.db
-    if (!api?.deleteProduct || id == null) return
-    if (!window.confirm(`¿Eliminar «${codigo || id}»?`)) return
+    const pid = Number(id)
+    if (!api?.deleteProduct || id == null || !Number.isFinite(pid) || pid <= 0) return
+    if (metaRow != null && invVentaItemsCount(metaRow) > 0) {
+      toast.error(MSG_DELETE_BLOCKED_POS)
+      return
+    }
+    if (!(await appConfirm(`¿Eliminar «${codigo || id}»?`, { destructive: true, confirmLabel: 'Eliminar' }))) return
     try {
-      await api.deleteProduct(id)
+      await api.deleteProduct(pid)
       toast.success('Eliminado')
-      setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n })
-      if (focusedId === id) setFocusedId(null)
-      if (draftRef.current?.id === id) closePage()
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(pid); n.delete(id); return n })
+      if (focusedId === pid || focusedId === id) setFocusedId(null)
+      if (draftRef.current?.id === pid || draftRef.current?.id === id) closePage()
+      await new Promise((r) => requestAnimationFrame(r))
       await refresh()
-    } catch (e) { toast.error(String(e?.message || e)) }
+      requestAnimationFrame(() => {
+        inventorySearchRef.current?.focus?.({ preventScroll: true })
+      })
+    } catch (e) {
+      toast.error(ipcErrorMessage(e))
+    }
   }, [closePage, refresh, focusedId])
 
   const deleteMany = useCallback(async () => {
-    const ids = [...selectedIds]
+    const ids = Array.from(
+      new Set(Array.from(selectedIds, (x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)),
+    )
     if (ids.length === 0) return
-    if (!window.confirm(`¿Eliminar ${ids.length} artículo(s)?`)) return
+    if (!(await appConfirm(`¿Eliminar ${ids.length} artículo(s)?`, { destructive: true, confirmLabel: 'Eliminar' }))) return
     const api = window.bazar?.db
     if (!api?.deleteProduct) { toast.error('Base de datos no disponible.'); return }
-    try {
-      for (const id of ids) { await api.deleteProduct(id) }
-      toast.success(`Eliminados ${ids.length} artículo(s)`)
-      setSelectedIds(new Set())
-      await refresh()
-    } catch (e) { toast.error(String(e.message || e)) }
-  }, [selectedIds, refresh])
+    const byId = new Map()
+    for (const r of rows) {
+      const rid = invRowId(r)
+      if (rid != null) byId.set(rid, r)
+    }
+    let ok = 0
+    const failLines = []
+    const removedFromSelection = new Set()
+    for (const pid of ids) {
+      const row = byId.get(pid)
+      if (row != null && invVentaItemsCount(row) > 0) {
+        failLines.push(`«${row.codigo || pid}»: historial POS (no se borra)`)
+        continue
+      }
+      try {
+        await api.deleteProduct(pid)
+        ok += 1
+        removedFromSelection.add(pid)
+        // Ceder el hilo para que el input de búsqueda siga respondiendo entre borrados IPC.
+        await new Promise((r) => requestAnimationFrame(r))
+      } catch (e) {
+        failLines.push(`«${row?.codigo || pid}»: ${ipcErrorMessage(e)}`)
+      }
+    }
+    if (removedFromSelection.size > 0) {
+      setSelectedIds((prev) => {
+        const n = new Set(prev)
+        for (const id of removedFromSelection) n.delete(id)
+        return n
+      })
+    }
+    if (ok > 0) toast.success(ok === ids.length ? `Eliminados ${ok} artículo(s)` : `Eliminados ${ok} de ${ids.length}`)
+    if (failLines.length) {
+      const head = failLines.slice(0, 4).join('\n')
+      const more = failLines.length > 4 ? `\n…y ${failLines.length - 4} más` : ''
+      toast.error(head + more, { duration: 12_000 })
+    }
+    await refresh()
+    requestAnimationFrame(() => {
+      inventorySearchRef.current?.focus?.({ preventScroll: true })
+    })
+  }, [selectedIds, refresh, rows])
 
   const deleteFromPage = useCallback(async () => {
-    const d = draftRef.current; const id = d?.id
+    const d = draftRef.current
+    const id = d?.id
     if (id == null) return
-    await deleteOne(id, String(d.codigo || '').trim() || undefined)
-  }, [deleteOne])
+    const api = window.bazar?.db
+    if (api?.getProductById) {
+      try {
+        const full = await api.getProductById(id)
+        if (!full) {
+          toast.error('No se encontró el artículo.')
+          void refresh()
+          return
+        }
+        const metaRow = { ...d, venta_items_count: invVentaItemsCount(full) }
+        await deleteOne(id, String(d.codigo || '').trim() || undefined, metaRow)
+      } catch (e) {
+        toast.error(ipcErrorMessage(e))
+      }
+      return
+    }
+    await deleteOne(id, String(d.codigo || '').trim() || undefined, d)
+  }, [deleteOne, refresh])
 
   const printLabels = useCallback(async (ids) => {
     const api = window.bazar?.printers?.printLabel
     if (!api) { toast.error('Impresión no disponible'); return }
     const list = ids && ids.length ? ids : [...selectedIds]
     if (list.length === 0) { toast.message('Seleccioná al menos un artículo'); return }
-    const byId = new Map(rows.map((r) => [r.id, r]))
+    const byId = new Map()
+    for (const r of rows) {
+      const id = invRowId(r)
+      if (id != null) byId.set(id, r)
+    }
     let ok = 0
-    for (const id of list) {
-      const r = byId.get(id); if (!r) continue
+    for (const raw of list) {
+      const id = Number(raw)
+      const r = Number.isFinite(id) ? byId.get(id) : undefined
+      if (!r) continue
       try {
         const res = await api({ codigo: r.codigo, nombre: r.descripcion || r.codigo, precio: Number(r.precio) || 0 })
         if (res?.ok) ok += 1
@@ -352,24 +733,49 @@ export function InventoryView() {
   }
 
   const hasActiveFilters = estadoIndex !== 0 || vistaIndex !== 0 || listTab !== 'main' || q.trim() !== ''
-  const allRowIds = useMemo(() => rows.map((r) => r.id), [rows])
+  const allRowIds = useMemo(
+    () => rows.map((r) => invRowId(r)).filter((id) => id != null),
+    [rows],
+  )
   const allSelected = allRowIds.length > 0 && allRowIds.every((id) => selectedIds.has(id))
   const someSelected = allRowIds.some((id) => selectedIds.has(id))
   const headerChecked = allSelected ? true : someSelected ? 'indeterminate' : false
 
-  const toggleAll = (next) => {
-    if (next) setSelectedIds(new Set(allRowIds))
-    else setSelectedIds(new Set())
-  }
+  /** El `Checkbox` premium llama `onChange(!isOn)`; en indeterminado `isOn` es true → llega `false` y no debe vaciar la tabla: debe completar la selección. */
+  const toggleHeaderSelect = useCallback(() => {
+    if (allRowIds.length === 0) return
+    if (allSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(allRowIds))
+  }, [allRowIds, allSelected])
 
   const toggleOne = (id) => {
+    const n = Number(id)
+    if (!Number.isFinite(n)) return
     setSelectedIds((prev) => {
-      const n = new Set(prev)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
+      const next = new Set(Array.from(prev, (x) => Number(x)).filter((x) => Number.isFinite(x)))
+      if (next.has(n)) next.delete(n)
+      else next.add(n)
+      return next
     })
   }
+
+  /** Toda la selección visible tiene historial POS: el borrado masivo no va a lograr nada útil. */
+  const bulkDeleteAllBlocked = useMemo(() => {
+    if (selectedIds.size === 0) return false
+    const byId = new Map()
+    for (const r of rows) {
+      const rid = invRowId(r)
+      if (rid != null) byId.set(rid, r)
+    }
+    for (const raw of selectedIds) {
+      const id = Number(raw)
+      if (!Number.isFinite(id) || id <= 0) return false
+      const r = byId.get(id)
+      if (!r) return false
+      if (invVentaItemsCount(r) === 0) return false
+    }
+    return true
+  }, [rows, selectedIds])
 
   // Si hay página abierta (nuevo / edit) tomamos todo el canvas del módulo.
   if (productPage) {
@@ -387,18 +793,20 @@ export function InventoryView() {
     )
   }
 
+  const hasInvSelection = selectedIds.size > 0
+
   return (
     <div data-app-workspace className="relative flex h-full flex-col bg-background">
       <PageHeader
         icon={<Package className="size-5" strokeWidth={1.5} />}
         title="Inventario"
-        description="Todos los artículos de la tienda. Filtrá, editá y ajustá precios en masa."
+        description="Todos los artículos de la tienda. Filtra, edita y ajusta precios en masa."
         count={rows.length}
         actions={
           <button
             type="button"
             onClick={openNew}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/90 dark:bg-foreground/92"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/90 dark:bg-foreground dark:text-background dark:hover:bg-foreground/88"
           >
             <Plus className="size-3.5" strokeWidth={2} />
             Nuevo artículo
@@ -452,7 +860,7 @@ export function InventoryView() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="ml-0.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/80 hover:bg-[#f1f0ef] hover:text-foreground/85 dark:hover:bg-zinc-800/60"
+                className="ml-0.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted/70 hover:text-foreground/85 dark:hover:bg-muted/55"
               >
                 <FilterX className="size-3" strokeWidth={1.75} />
                 Vaciar
@@ -464,9 +872,12 @@ export function InventoryView() {
           ref={inventorySearchRef}
           value={q}
           onChange={setQ}
+          data-inventory-search
           onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') { e.preventDefault(); void refresh(q) }
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void refresh(q)
+            }
           }}
           placeholder="Código, nombre o tag…"
           width="w-72"
@@ -489,7 +900,7 @@ export function InventoryView() {
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 px-3 text-[12.5px] font-medium text-foreground/85 transition-colors hover:bg-[#f3f3f2] dark:hover:bg-zinc-800/60"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 px-3 text-[12.5px] font-medium text-foreground/85 transition-colors hover:bg-muted/70 dark:hover:bg-muted/55"
                 >
                   <FilterX className="size-3.5" strokeWidth={1.75} />
                   Vaciar filtros
@@ -498,7 +909,7 @@ export function InventoryView() {
                 <button
                   type="button"
                   onClick={openNew}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-3 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/90"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-3 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/90 dark:bg-foreground dark:text-background dark:hover:bg-foreground/88"
                 >
                   <Plus className="size-3.5" strokeWidth={2} />
                   Crear primer artículo
@@ -510,16 +921,25 @@ export function InventoryView() {
           <CardsView
             rows={rows}
             focusedId={focusedId}
-            onFocus={setFocusedId}
+            onFocus={(rid) => {
+              if (rid != null && Number.isFinite(Number(rid))) setFocusedId(Number(rid))
+            }}
             onEdit={openEdit}
             selectedIds={selectedIds}
             onToggle={toggleOne}
+            hasSelection={hasInvSelection}
           />
         ) : (
-          <DataTable>
+          <div
+            className="inv-table-select flex min-h-0 flex-1 flex-col"
+            data-has-selection={hasInvSelection ? '' : undefined}
+          >
+            <DataTable>
             <DataTableHeader>
-              <DataTableHead width="32px" className="px-3">
-                <Checkbox checked={headerChecked} onChange={toggleAll} aria="Seleccionar todo" />
+              <DataTableHead width="32px" className="px-3 inv-select-cell">
+                <div data-inv-check-wrap className="inline-flex">
+                  <Checkbox checked={headerChecked} onChange={toggleHeaderSelect} aria="Seleccionar todo" />
+                </div>
               </DataTableHead>
               <DataTableHead width="128px">Código</DataTableHead>
               <DataTableHead>Nombre</DataTableHead>
@@ -530,29 +950,37 @@ export function InventoryView() {
               <DataTableHead width="96px">Fecha</DataTableHead>
             </DataTableHeader>
             <DataTableBody>
-              {rows.map((r) => (
+              {rows.map((r) => {
+                const rid = invRowId(r)
+                const rowSelected = rid != null && selectedIds.has(rid)
+                const rowActive = rid != null && focusedId === rid
+                return (
                 <DataTableRow
-                  key={r.id}
-                  selected={selectedIds.has(r.id)}
-                  active={focusedId === r.id}
-                  onClick={() => setFocusedId(r.id)}
+                  key={rid ?? r.id}
+                  selected={rowSelected}
+                  active={rowActive}
+                  onClick={() => rid != null && setFocusedId(rid)}
                   onDoubleClick={(e) => { e.preventDefault(); void openEdit(r) }}
                 >
-                  <DataTableCell className="px-3">
-                    <Checkbox
-                      checked={selectedIds.has(r.id)}
-                      onChange={() => toggleOne(r.id)}
-                      aria={`Seleccionar ${r.codigo}`}
-                    />
+                  <DataTableCell className="px-3 inv-select-cell">
+                    <div data-inv-check-wrap className="inline-flex">
+                      <Checkbox
+                        checked={rowSelected}
+                        onChange={() => rid != null && toggleOne(rid)}
+                        aria={`Seleccionar ${r.codigo}`}
+                      />
+                    </div>
                   </DataTableCell>
                   <DataTableCell mono muted>{r.codigo || '—'}</DataTableCell>
                   <DataTableCell>
                     <span className="block max-w-full truncate text-foreground/95">{r.descripcion || '—'}</span>
                   </DataTableCell>
                   <DataTableCell className="text-[11.5px] text-muted-foreground/85">
-                    <span className="block max-w-full truncate">{String(r.tags || '').trim() || '—'}</span>
+                    <InvTagPills tagsCsv={r.tags} max={6} />
                   </DataTableCell>
-                  <DataTableCell align="right" className="font-medium text-foreground/90">{formatPrice(r.precio)}</DataTableCell>
+                  <DataTableCell align="right" className="col-precio font-medium text-foreground/90">
+                    {formatPrice(r.precio)}
+                  </DataTableCell>
                   <DataTableCell align="center" className="text-[11.5px] text-muted-foreground/85">
                     {normPiezaUnica(r.pieza_unica) ? '1' : normStock(r)}
                   </DataTableCell>
@@ -573,20 +1001,28 @@ export function InventoryView() {
                       <RowActionButton
                         icon={<Printer className="size-3.5" strokeWidth={1.75} />}
                         label="Imprimir etiqueta"
-                        onClick={() => void printLabels([r.id])}
+                        onClick={() => rid != null && void printLabels([rid])}
                       />
                       <RowActionButton
                         icon={<Trash2 className="size-3.5" strokeWidth={1.75} />}
                         label="Eliminar"
                         destructive
-                        onClick={() => void deleteOne(r.id, r.codigo)}
+                        disabled={invVentaItemsCount(r) > 0}
+                        title={
+                          invVentaItemsCount(r) > 0
+                            ? 'No se puede eliminar: tiene líneas en ventas del POS (aunque el estado sea «Disponible»).'
+                            : undefined
+                        }
+                        onClick={() => rid != null && void deleteOne(rid, r.codigo, r)}
                       />
                     </RowActionStrip>
                   </DataTableCell>
                 </DataTableRow>
-              ))}
+                )
+              })}
             </DataTableBody>
           </DataTable>
+          </div>
         )}
       </DataTableShell>
 
@@ -615,6 +1051,12 @@ export function InventoryView() {
               icon={<Trash2 className="size-3.5" strokeWidth={1.75} />}
               label="Eliminar"
               destructive
+              disabled={bulkDeleteAllBlocked}
+              title={
+                bulkDeleteAllBlocked
+                  ? 'Ninguno de los seleccionados se puede borrar: todos tienen historial en ventas del POS.'
+                  : undefined
+              }
               onClick={deleteMany}
             />
           </>
@@ -626,36 +1068,40 @@ export function InventoryView() {
         initialTagsByGroup={draft.tagsByGroup}
         inventorySearchRef={inventorySearchRef}
         onClose={() => setPriceDialogOpen(false)}
-        onApplied={() => refresh()}
+        onApplied={() => void refresh()}
       />
     </div>
   )
 }
 
 /** Vista de tarjetas: grilla compacta con imagen opcional, nombre, estado y precio. */
-function CardsView({ rows, focusedId, onFocus, onEdit, selectedIds, onToggle }) {
+function CardsView({ rows, focusedId, onFocus, onEdit, selectedIds, onToggle, hasSelection }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 pt-3">
+    <div
+      className="inv-cards-grid grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 pt-3"
+      data-has-selection={hasSelection ? '' : undefined}
+    >
       {rows.map((r) => {
-        const selected = selectedIds.has(r.id)
-        const active = focusedId === r.id
+        const rid = invRowId(r)
+        const selected = rid != null && selectedIds.has(rid)
+        const active = rid != null && focusedId === rid
         return (
           <article
-            key={r.id}
-            onClick={() => onFocus(r.id)}
+            key={rid ?? r.id}
+            onClick={() => rid != null && onFocus(rid)}
             onDoubleClick={(e) => { e.preventDefault(); void onEdit(r) }}
             className={`group relative cursor-pointer rounded-lg border p-3 transition-colors ${
               selected
                 ? 'border-primary/40 bg-primary/[0.04]'
                 : active
                   ? 'border-foreground/30 bg-muted/20'
-                  : 'border-border/60 hover:border-border hover:bg-[#faf9f8] dark:hover:bg-zinc-900/60'
+                  : 'border-border/60 hover:border-border hover:bg-muted/45 dark:hover:bg-muted/40'
             }`}
           >
-            <div className="absolute left-2 top-2 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden={!selected}>
+            <div data-inv-card-check className="absolute left-2 top-2">
               <Checkbox
                 checked={selected}
-                onChange={() => onToggle(r.id)}
+                onChange={() => rid != null && onToggle(rid)}
                 aria={`Seleccionar ${r.codigo}`}
               />
             </div>
@@ -666,11 +1112,11 @@ function CardsView({ rows, focusedId, onFocus, onEdit, selectedIds, onToggle }) 
             <h3 className="mb-1 line-clamp-2 text-[13px] font-medium leading-snug tracking-[-0.005em] text-foreground/95">
               {r.descripcion || '—'}
             </h3>
-            <div className="mb-2 text-[11px] leading-relaxed text-muted-foreground/85 line-clamp-2">
-              {String(r.tags || '').trim() || '—'}
+            <div className="mb-2 text-[11px] leading-relaxed text-muted-foreground/85">
+              <InvTagPills tagsCsv={r.tags} max={4} />
             </div>
             <div className="flex items-end justify-between gap-2">
-              <span className="text-[15px] font-semibold tabular-nums text-foreground">{formatPrice(r.precio)}</span>
+              <span className="col-precio text-[15px] font-semibold text-foreground">{formatPrice(r.precio)}</span>
               <span className="text-[10px] text-muted-foreground/70">
                 {formatFechaIngreso(r.fecha_ingreso ?? r.created_at)}
               </span>

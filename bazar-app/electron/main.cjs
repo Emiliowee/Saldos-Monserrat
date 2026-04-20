@@ -1,7 +1,7 @@
-const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, nativeImage } = require('electron')
 const fs = require('fs')
 const path = require('path')
-const { pathToFileURL } = require('node:url')
+const { pathToFileURL, fileURLToPath } = require('node:url')
 const { execFile } = require('child_process')
 const os = require('os')
 const db = require('./database.cjs')
@@ -15,8 +15,52 @@ const { createSettingsStore } = require('./settings-store.cjs')
 const { createLabelTemplatesStore } = require('./label-templates-store.cjs')
 const labelPdfRender = require('./label-pdf-render.cjs')
 const banquetaSheetPdf = require('./banqueta-sheet-pdf.cjs')
+const { applyLabelLogoStyle } = require('./label-logo-raster.cjs')
 
 const isDev = !app.isPackaged
+
+/** Ruta de disco: acepta `file://` (p. ej. settings antiguos) o ruta absoluta normal. */
+function workspacePathToFs(p) {
+  const s = String(p ?? '').trim()
+  if (!s) return ''
+  if (s.startsWith('file:')) {
+    try {
+      return fileURLToPath(s)
+    } catch {
+      return s
+    }
+  }
+  return s
+}
+
+/** Logo por defecto de la app (mismo que el sidebar sin avatar). */
+function resolveBrandingLogoFsPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'public', 'branding', 'logo.jpg'),
+    path.join(__dirname, '..', 'dist', 'branding', 'logo.jpg'),
+  ]
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) return p
+    } catch {
+      /* noop */
+    }
+  }
+  return ''
+}
+
+/** Ruta de archivo a usar en etiquetas: avatar del espacio o logo por defecto. */
+function effectiveWorkspaceLogoFsPath(settings) {
+  const user = workspacePathToFs(String(settings?.workspaceLogoPath ?? '').trim())
+  if (user) {
+    try {
+      if (fs.existsSync(user) && fs.statSync(user).isFile()) return user
+    } catch {
+      /* noop */
+    }
+  }
+  return resolveBrandingLogoFsPath()
+}
 
 /** Nombre de archivo PDF de etiqueta (sin extensión), seguro para el sistema de archivos. */
 function safeEtiquetaFileStem(codigo, nombreEtiqueta) {
@@ -255,14 +299,14 @@ function createPdvWindow() {
 
   const icon = resolveAppIconPath()
   pdvWindow = new BrowserWindow({
-    parent: mainWindow ?? undefined,
     modal: false,
-    title: 'Punto de venta — Bazar',
+    title: 'Caja — Bazar Monserrat',
     width: 1180,
     height: 760,
     minWidth: 880,
     minHeight: 560,
-    backgroundColor: '#f3f0f4',
+    /* Antes del paint de React: tono papel del tema claro (index.css --background aprox.) */
+    backgroundColor: '#f6f2f8',
     frame: false,
     icon: icon || undefined,
     webPreferences: {
@@ -384,6 +428,65 @@ function registerIpc() {
 
   ipcMain.handle('settings:get', () => settingsStore?.getAll() ?? {})
   ipcMain.handle('settings:set', (_, patch) => settingsStore?.merge(patch ?? {}) ?? {})
+  /**
+   * Vista previa del logo en el renderer (data URL). Si `rawPath` está vacío o el archivo
+   * no existe, se usa `public/branding/logo.jpg` (mismo recurso que el avatar por defecto).
+   */
+  ipcMain.handle('assets:logoDataUrl', async (_, rawPath) => {
+    const user = workspacePathToFs(String(rawPath ?? '').trim())
+    let p = ''
+    if (user) {
+      try {
+        if (fs.existsSync(user) && fs.statSync(user).isFile()) p = user
+      } catch {
+        /* noop */
+      }
+    }
+    if (!p) p = resolveBrandingLogoFsPath()
+    if (!p) return { ok: false, message: 'Sin imagen de logo (ni avatar ni logo por defecto)' }
+    try {
+      if (!fs.existsSync(p) || !fs.statSync(p).isFile()) return { ok: false, message: 'Archivo no encontrado' }
+      const ext = path.extname(p).toLowerCase()
+      if (!['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'].includes(ext)) {
+        return { ok: false, message: 'Formato no soportado para el logo' }
+      }
+      const img = nativeImage.createFromPath(p)
+      if (img.isEmpty()) return { ok: false, message: 'No se pudo leer la imagen' }
+      const st = settingsStore?.getAll?.() ?? {}
+      const styled = applyLabelLogoStyle(img, {
+        style: st.labelLogoStyle,
+        warmth: st.labelLogoWarmth,
+        contrast: st.labelLogoContrast,
+        saturation: st.labelLogoSaturation,
+      })
+      const png = styled.toPNG()
+      const buf = Buffer.isBuffer(png) ? png : Buffer.from(png)
+      return { ok: true, dataUrl: `data:image/png;base64,${buf.toString('base64')}` }
+    } catch (e) {
+      return { ok: false, message: String(e?.message || e) }
+    }
+  })
+
+  /** Imagen arbitraria (PNG/JPEG/WebP…) a data URL, sin estilo de logo térmico. Vacío → error (sin fallback). */
+  ipcMain.handle('assets:imageFileDataUrl', async (_, rawPath) => {
+    const user = workspacePathToFs(String(rawPath ?? '').trim())
+    if (!user) return { ok: false, message: 'Sin ruta de imagen' }
+    try {
+      if (!fs.existsSync(user) || !fs.statSync(user).isFile()) return { ok: false, message: 'Archivo no encontrado' }
+      const ext = path.extname(user).toLowerCase()
+      if (!['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'].includes(ext)) {
+        return { ok: false, message: 'Formato no soportado' }
+      }
+      const img = nativeImage.createFromPath(user)
+      if (img.isEmpty()) return { ok: false, message: 'No se pudo leer la imagen' }
+      const png = img.toPNG()
+      const buf = Buffer.isBuffer(png) ? png : Buffer.from(png)
+      return { ok: true, dataUrl: `data:image/png;base64,${buf.toString('base64')}` }
+    } catch (e) {
+      return { ok: false, message: String(e?.message || e) }
+    }
+  })
+
   ipcMain.handle('settings:pickLabelPdfFolder', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const r = await dialog.showOpenDialog(win ?? undefined, {
@@ -518,7 +621,13 @@ function registerIpc() {
       codigo: codigoTrim,
       nombre: String(nombre || '').trim() || '—',
       precio: precioStr,
-      logoPath: String(settings.workspaceLogoPath || ''),
+      logoPath: effectiveWorkspaceLogoFsPath(settings),
+      labelLogoStyle: settings.labelLogoStyle || 'thermal',
+      labelLogoWarmth: Number.isFinite(Number(settings.labelLogoWarmth)) ? Number(settings.labelLogoWarmth) : 0,
+      labelLogoContrast: Number.isFinite(Number(settings.labelLogoContrast)) ? Number(settings.labelLogoContrast) : 100,
+      labelLogoSaturation: Number.isFinite(Number(settings.labelLogoSaturation))
+        ? Number(settings.labelLogoSaturation)
+        : 100,
     }
 
     let labelMeta = { barcodeOk: false, barcodeNote: '' }

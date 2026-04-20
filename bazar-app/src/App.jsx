@@ -9,6 +9,7 @@ import { ensureCanLeaveCuaderno } from '@/lib/cuadernoNavGuard.js'
 import { useBarcode } from '@/hooks/useBarcode'
 import { usePlatform } from '@/hooks/usePlatform'
 import { ThemeProvider } from '@/theme/ThemeProvider.jsx'
+import { AppConfirmProvider } from '@/components/shell/AppConfirmProvider.jsx'
 import { SidebarProvider, SidebarInset, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/shell/AppSidebar'
 import { AppCommandMenu } from '@/components/shell/AppCommandMenu'
@@ -18,7 +19,7 @@ import { InventoryView } from '@/views/InventoryView'
 import { PlaceholderView } from '@/views/PlaceholderView'
 import { BanquetaView } from '@/views/BanquetaView.jsx'
 import { PdvHubView } from '@/views/PdvHubView.jsx'
-import { PdvTerminalView } from '@/views/PdvTerminalView.jsx'
+import { PdvStandaloneApp } from '@/pdv/PdvStandaloneApp.jsx'
 import { SettingsHubView } from '@/views/SettingsHubView'
 import { CreditosView } from '@/views/CreditosView.jsx'
 import { CuadernoView } from '@/views/CuadernoView.jsx'
@@ -166,7 +167,18 @@ function MainApp() {
   const hideNativeWindowControls = platform === 'darwin'
   const sectionTitle = NAV_MODULES.find((m) => m.id === section)?.label ?? 'Bazar Monserrat'
 
-  useHotkeys('f1', () => void navigateSections('pdv'), { preventDefault: true })
+  useHotkeys(
+    'f1',
+    () => {
+      const open = window.bazar?.pdv?.open
+      if (typeof open === 'function') {
+        Promise.resolve(open()).catch(() => void navigateSections('pdv'))
+        return
+      }
+      void navigateSections('pdv')
+    },
+    { preventDefault: true },
+  )
   useHotkeys('f2', () => void navigateSections('inventario'), { preventDefault: true })
   useHotkeys('f3', () => void navigateSections('creditos'), { preventDefault: true })
   useHotkeys('f4', () => void navigateSections('banqueta'), { preventDefault: true })
@@ -184,12 +196,12 @@ function MainApp() {
 
   const handleBarcode = useCallback(
     async (code) => {
+      if (typeof document !== 'undefined' && document.querySelector('[data-no-barcode="true"]')) return
       const db = window.bazar?.db
 
       if (section === 'inventario') {
         const prod = await db?.getProductByCodigo?.(code)
         if (prod) {
-          sessionStorage.setItem('bazar.inventoryOpenProductId', String(prod.id))
           window.dispatchEvent(new CustomEvent('bazar:inventory-open-product', { detail: prod.id }))
           toast.success(`${prod.descripcion || code}`)
         } else {
@@ -210,8 +222,12 @@ function MainApp() {
 
       const prod = await db?.getProductByCodigo?.(code)
       if (prod) {
-        sessionStorage.setItem('bazar.inventoryOpenProductId', String(prod.id))
         void navigateSections('inventario')
+        // StrictMode remonta el inventario: el efecto que lee sessionStorage puede ejecutarse antes de que exista el listener o borrar la clave en el primer ciclo. El evento en microtarea llega con la vista ya montada.
+        const pid = prod.id
+        queueMicrotask(() => {
+          window.dispatchEvent(new CustomEvent('bazar:inventory-open-product', { detail: pid }))
+        })
         toast.success(`${prod.descripcion || code}`)
       } else {
         toast.info(`Código: ${code} — No encontrado en inventario`)
@@ -233,7 +249,7 @@ function MainApp() {
       />
       <SidebarInset
         data-app-workspace
-        className="flex min-h-0 flex-col bg-[#FFFFFF] dark:bg-background"
+        className="flex min-h-0 flex-col bg-background"
       >
         <header
           className="relative flex h-11 shrink-0 items-center border-b border-[#ececec] bg-[#F8F8F7] px-2 dark:border-zinc-800 dark:bg-zinc-900"
@@ -244,8 +260,8 @@ function MainApp() {
           }}
         >
           <WindowHeaderSidebarTrigger />
-          <span className="absolute inset-0 flex items-center justify-center pointer-events-none select-none text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-            {sectionTitle}
+          <span className="absolute inset-x-14 inset-y-0 flex items-center justify-center pointer-events-none select-none text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground sm:inset-x-20">
+            <span className="block max-w-full truncate text-center">{sectionTitle}</span>
           </span>
           <div className="ml-auto flex items-center">
             {!hideNativeWindowControls && <WindowControls />}
@@ -288,14 +304,16 @@ function AppContent() {
   const hash = embedHash()
   if (hash === 'devices') return <EmbedShell title="Dispositivos"><DevicesApp /></EmbedShell>
   if (hash === 'rive') return <EmbedShell title="Vista previa Rive"><RivePreviewView /></EmbedShell>
-  if (hash === 'pdv-terminal') return <EmbedShell title="Punto de venta"><PdvTerminalView /></EmbedShell>
+  if (hash === 'pdv-terminal') return <PdvStandaloneApp />
   return <MainApp />
 }
 
 export default function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <AppConfirmProvider>
+        <AppContent />
+      </AppConfirmProvider>
     </ThemeProvider>
   )
 }

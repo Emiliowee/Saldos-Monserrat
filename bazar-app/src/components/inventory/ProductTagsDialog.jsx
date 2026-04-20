@@ -96,11 +96,11 @@ export function ProductTagsDialog({ open, title = 'Propiedades', initialMap, onC
           // Evita el handler interno de Radix (preventDefault + focus en trigger inexistente),
           // que impide que FocusScope restaure el foco y deja la app sin teclado útil.
           e.preventDefault()
+          releaseModalBodyLocks()
           const el = restoreFocusRef?.current
           window.requestAnimationFrame(() => {
             if (el && typeof el.focus === 'function') el.focus({ preventScroll: true })
             else document.querySelector('input[data-inventory-search]')?.focus?.({ preventScroll: true })
-            releaseModalBodyLocks()
           })
         }}
         className={cn(

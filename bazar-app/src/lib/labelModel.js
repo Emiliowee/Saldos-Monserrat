@@ -27,6 +27,8 @@ export function ptToMm(pt) {
 export const BLOCK_TYPES = Object.freeze({
   empresa: 'empresa',
   logo: 'logo',
+  /** Imagen fija en disco (logo secundario, icono, PNG importado). No usa el avatar del espacio. */
+  imagen_fija: 'imagen_fija',
   nombre: 'nombre',
   precio: 'precio',
   codigo: 'codigo',
@@ -42,7 +44,18 @@ export const BLOCK_META = {
     sample: 'Saldos Monserrat',
     defaults: { fontSize: 6, fontWeight: 'bold', align: 'center', color: '#6B4A52' },
   },
-  logo: { label: 'Logo', icon: 'image', sample: null, defaults: { objectFit: 'contain' } },
+  logo: {
+    label: 'Logo empresa',
+    icon: 'image',
+    sample: null,
+    defaults: { objectFit: 'contain' },
+  },
+  imagen_fija: {
+    label: 'Imagen / icono',
+    icon: 'image-plus',
+    sample: null,
+    defaults: { objectFit: 'contain', imagePath: '' },
+  },
   nombre: {
     label: 'Nombre',
     icon: 'type',
@@ -80,7 +93,15 @@ export const BLOCK_META = {
     label: 'Texto',
     icon: 'text',
     sample: 'Texto',
-    defaults: { fontSize: 6.5, fontWeight: 'normal', align: 'center', color: '#141417', text: 'Texto' },
+    defaults: {
+      fontSize: 5,
+      fontWeight: 'normal',
+      align: 'center',
+      color: '#141417',
+      text: 'Texto',
+      maxLines: 8,
+      lineHeight: 1.2,
+    },
   },
   separador: {
     label: 'Separador',
@@ -144,11 +165,21 @@ function tplEstandarBazar() {
     border: { enabled: true, width: 0.45, color: '#D4D2CE' },
     blocks: [
       {
-        id: 'b_empresa',
-        type: 'empresa',
+        id: 'b_logo',
+        type: 'logo',
         x: 2,
         y: 1.2,
-        w: W - 4,
+        w: 6.5,
+        h: 3,
+        visible: true,
+        objectFit: 'contain',
+      },
+      {
+        id: 'b_empresa',
+        type: 'empresa',
+        x: 9.5,
+        y: 1.2,
+        w: W - 11.5,
         h: 3,
         visible: true,
         fontSize: 5.5,
@@ -284,11 +315,21 @@ function tplTicketCompacto() {
         maxLines: 2,
       },
       {
-        id: 'bc_emp',
-        type: 'empresa',
+        id: 'bc_logo',
+        type: 'logo',
         x: 2,
         y: 26.5,
-        w: W - 4,
+        w: 4,
+        h: 2.8,
+        visible: true,
+        objectFit: 'contain',
+      },
+      {
+        id: 'bc_emp',
+        type: 'empresa',
+        x: 7,
+        y: 26.5,
+        w: W - 9,
         h: 2.8,
         visible: true,
         fontSize: 5,
@@ -317,11 +358,21 @@ function tplGondola() {
     border: { enabled: true, width: 0.45, color: '#D4D2CE' },
     blocks: [
       {
-        id: 'go_nom',
-        type: 'nombre',
+        id: 'go_logo',
+        type: 'logo',
         x: 2,
         y: 2,
-        w: 36,
+        w: 6,
+        h: 6,
+        visible: true,
+        objectFit: 'contain',
+      },
+      {
+        id: 'go_nom',
+        type: 'nombre',
+        x: 9,
+        y: 2,
+        w: 29,
         h: 11,
         visible: true,
         fontSize: 6.5,
@@ -393,7 +444,7 @@ function tplPrecioDestacado() {
         type: 'precio',
         x: 2,
         y: 2,
-        w: W - 4,
+        w: 30,
         h: 9,
         visible: true,
         fontSize: 13,
@@ -401,6 +452,16 @@ function tplPrecioDestacado() {
         align: 'center',
         color: '#141417',
         showLabel: false,
+      },
+      {
+        id: 'pd_logo',
+        type: 'logo',
+        x: 34,
+        y: 2,
+        w: 6,
+        h: 6,
+        visible: true,
+        objectFit: 'contain',
       },
       {
         id: 'pd_nom',
@@ -479,6 +540,7 @@ export function normalizeTemplate(input) {
   t.blocks = normBlocks
   t.width_mm = Number.isFinite(Number(t.width_mm)) ? Math.max(15, Number(t.width_mm)) : base.width_mm
   t.height_mm = Number.isFinite(Number(t.height_mm)) ? Math.max(10, Number(t.height_mm)) : base.height_mm
+  /* No insertar bloque logo aquí: si el usuario lo borró, debe poder guardarse sin que vuelva a aparecer. */
   return t
 }
 
