@@ -5,7 +5,14 @@
  * Papel cálido + coral sakura + lavanda: bazar editorial, no plantilla.   */
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.5rem;
+
+  /* Sombras premium — muy sutiles, tipo Linear / Raycast */
+  --shadow-xs: 0 1px 1px 0 oklch(0.22 0.03 285 / 0.03);
+  --shadow-sm: 0 1px 2px 0 oklch(0.22 0.03 285 / 0.04), 0 1px 1px 0 oklch(0.22 0.03 285 / 0.03);
+  --shadow-md: 0 2px 4px -1px oklch(0.22 0.03 285 / 0.05), 0 1px 2px -1px oklch(0.22 0.03 285 / 0.04);
+  --shadow-lg: 0 8px 24px -6px oklch(0.22 0.03 285 / 0.08), 0 2px 6px -2px oklch(0.22 0.03 285 / 0.05);
+  --shadow-pop: 0 12px 32px -8px oklch(0.22 0.03 285 / 0.12), 0 4px 12px -4px oklch(0.22 0.03 285 / 0.06);
 
   /* Brand — coral sakura (firme, reconocible) */
   --primary: oklch(0.68 0.14 18);
@@ -60,12 +67,19 @@
   --primary: oklch(0.74 0.12 18);
   --primary-foreground: oklch(0.12 0.02 285);
 
-  --background: oklch(0.19 0.022 285);
-  --foreground: oklch(0.93 0.02 300);
-  --card: oklch(0.22 0.024 285);
-  --card-foreground: oklch(0.93 0.02 300);
-  --popover: oklch(0.22 0.024 285);
-  --popover-foreground: oklch(0.93 0.02 300);
+  /* Sombras en dark: más profundas, compensan la falta de separación tonal */
+  --shadow-xs: 0 1px 1px 0 oklch(0 0 0 / 0.25);
+  --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 0.35), 0 1px 1px 0 oklch(0 0 0 / 0.25);
+  --shadow-md: 0 2px 4px -1px oklch(0 0 0 / 0.4), 0 1px 2px -1px oklch(0 0 0 / 0.3);
+  --shadow-lg: 0 8px 24px -6px oklch(0 0 0 / 0.55), 0 2px 6px -2px oklch(0 0 0 / 0.35);
+  --shadow-pop: 0 12px 32px -8px oklch(0 0 0 / 0.6), 0 4px 12px -4px oklch(0 0 0 / 0.4);
+
+  --background: oklch(0.17 0.022 285);
+  --foreground: oklch(0.94 0.02 300);
+  --card: oklch(0.21 0.024 285);
+  --card-foreground: oklch(0.94 0.02 300);
+  --popover: oklch(0.23 0.024 285);
+  --popover-foreground: oklch(0.94 0.02 300);
 
   --secondary: oklch(0.28 0.03 285);
   --secondary-foreground: oklch(0.93 0.02 300);
@@ -91,15 +105,15 @@
   --chart-4: oklch(0.60 0.12 285);
   --chart-5: oklch(0.64 0.10 145);
 
-  --sidebar: oklch(0.17 0.025 285);
-  --sidebar-foreground: oklch(0.91 0.02 300);
+  --sidebar: oklch(0.14 0.02 285);
+  --sidebar-foreground: oklch(0.92 0.02 300);
   --sidebar-primary: oklch(0.74 0.12 18);
   --sidebar-primary-foreground: oklch(0.12 0.02 285);
   --sidebar-accent: oklch(0.26 0.04 18);
-  --sidebar-accent-foreground: oklch(0.93 0.02 300);
-  --sidebar-border: oklch(0.30 0.03 285);
+  --sidebar-accent-foreground: oklch(0.94 0.02 300);
+  --sidebar-border: oklch(0.26 0.028 285);
   --sidebar-ring: oklch(0.74 0.12 18);
-  --sidebar-muted-foreground: oklch(0.56 0.04 300);
+  --sidebar-muted-foreground: oklch(0.58 0.04 300);
 }
 
 @theme inline {
@@ -144,8 +158,16 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-pop: var(--shadow-pop);
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-fade-in: fade-in 0.18s cubic-bezier(0.2, 0, 0, 1);
+  --animate-slide-up: slide-up 0.22s cubic-bezier(0.2, 0, 0, 1);
+  --ease-premium: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @custom-variant dark (&:is(.dark *, [data-theme="dark"] *));
@@ -162,6 +184,8 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01", "ss03";
     background-color: var(--background);
   }
 }
@@ -181,6 +205,16 @@
 @keyframes accordion-up {
   from { height: var(--radix-accordion-content-height); }
   to { height: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Global scrollbar — thin, disappearing ────────────────────────────── */
@@ -304,4 +338,52 @@
 /* ── Embed windows (devices, rive, pdv-terminal) ─────────────────────── */
 #root:has(.embed-shell) {
   height: 100vh;
+}
+
+/* ── Refinamientos tipográficos premium ──────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-feature-settings: "cv11", "ss01", "ss03", "kern";
+  letter-spacing: -0.012em;
+}
+
+/* kbd consistent inside the whole app */
+kbd {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Números tabulares donde importa: montos, IDs, stock, fechas */
+[data-app-workspace] [class*="tabular-nums"],
+[data-app-workspace] .tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "lnum", "ss01";
+}
+
+/* Efecto cristal opcional para popovers sobre contenido — úsalo con .glass */
+.glass {
+  background: color-mix(in oklch, var(--popover) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+}
+
+/* Tap highlight off en Electron */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Divider sutil tipo Linear — clase utilitaria */
+.hairline {
+  border-color: color-mix(in oklch, var(--border) 75%, transparent);
+}
+
+/* Estados motion-reducidos limpios: desactiva keyframes de slide/fade globales */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

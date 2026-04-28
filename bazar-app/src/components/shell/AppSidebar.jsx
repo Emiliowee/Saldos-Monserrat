@@ -410,6 +410,7 @@ function NavItem({ label, Icon, kbd, active, onClick, trailing = null }) {
     <button
       type="button"
       onClick={() => void onClick()}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'group flex h-8 w-full items-center gap-2 rounded-lg pr-2 pl-0 text-left text-[13px] font-medium leading-snug tracking-[-0.01em] transition-[background-color,color] duration-100',
         active ? cn(ROW_ACTIVE, 'text-foreground') : cn(TEXT_ROW, TEXT_ROW_HOVER, ROW_HOVER),
@@ -515,8 +516,10 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
             <button
               type="button"
               className={cn(
-                'mt-[5px] flex w-full items-center gap-2.5 rounded-lg py-1.5 pl-0 pr-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
-                ROW_HOVER,
+                'group/ws mt-[5px] flex w-full items-center gap-2.5 rounded-md py-1.5 pl-0 pr-2 text-left',
+                'transition-[background-color,box-shadow] duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+                'hover:bg-muted/70 dark:hover:bg-muted/45 data-[state=open]:bg-muted/80 dark:data-[state=open]:bg-muted/55',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
               )}
               style={noDrag}
             >
@@ -534,7 +537,10 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
               <span className="flex-1 truncate text-[13px] font-medium leading-snug tracking-[-0.01em] text-foreground/90">
                 {workspaceName}
               </span>
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ICON_STROKE} />
+              <ChevronDown
+                className="size-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover/ws:text-muted-foreground group-data-[state=open]/ws:rotate-180 group-data-[state=open]/ws:text-foreground/80"
+                strokeWidth={ICON_STROKE}
+              />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="bottom" sideOffset={4} className="w-52 rounded-lg">
@@ -590,11 +596,15 @@ export function AppSidebar({ section, onNavigate, onSearchOpen, onHistoryBack, o
           ))}
         </nav>
 
-        <div className="flex flex-col gap-px">
-          <div className="flex h-[30px] shrink-0 items-center pl-[30px] pr-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+        <div className="mt-2 flex flex-col gap-px">
+          <div className="mb-[2px] flex h-[22px] shrink-0 items-center gap-2 pl-[10px] pr-2">
+            <span className="inline-flex shrink-0 items-center text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
               Más
             </span>
+            <span
+              aria-hidden
+              className="h-px flex-1 bg-gradient-to-r from-border/50 via-border/35 to-transparent"
+            />
           </div>
           <nav aria-label="Más" className="flex flex-col gap-px">
             {NAV_MORE.map(({ id, label, Icon, kbd }) => (

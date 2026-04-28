@@ -78,8 +78,8 @@ export function HomeView() {
 
   return (
     <div data-app-workspace className="relative flex h-full flex-col overflow-auto bg-background">
-      <div className="mx-auto w-full max-w-[880px] px-10 pb-16 pt-14">
-        <header className="space-y-2.5">
+      <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 mx-auto w-full max-w-[880px] px-10 pb-16 pt-14">
+        <header className="space-y-2.5 motion-safe:animate-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-300">
           <p className="text-[10.5px] font-medium uppercase tracking-[0.22em] text-muted-foreground/80">
             {dateLine}
           </p>
@@ -107,7 +107,7 @@ export function HomeView() {
               <ArrowUpRight className="size-3" strokeWidth={1.75} />
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-0 overflow-hidden rounded-xl border border-border/60 sm:grid-cols-4 divide-x divide-y divide-border/60">
+          <div className="grid grid-cols-2 gap-0 overflow-hidden rounded-lg border border-border/60 bg-card/40 shadow-[var(--shadow-xs)] sm:grid-cols-4 divide-x divide-y divide-border/60">
             <StatCell label="Disponibles" value={disponibles} />
             <StatCell label="En banqueta / vendidos" value={ocupados} muted />
             <StatCell label="Total artículos" value={productosTotal} muted />
@@ -130,7 +130,7 @@ export function HomeView() {
           <button
             type="button"
             onClick={openPdv}
-            className="group mb-2 flex w-full items-center gap-3 rounded-xl border border-foreground/15 bg-foreground px-4 py-3 text-background transition-colors hover:bg-foreground/92 dark:bg-foreground/92"
+            className="group mb-2 flex w-full items-center gap-3 rounded-lg border border-foreground/10 bg-foreground px-4 py-3 text-background shadow-[var(--shadow-sm)] transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)] hover:bg-foreground/92 hover:shadow-[var(--shadow-md)] active:scale-[0.995] dark:bg-foreground/92"
           >
             <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-background/10">
               <ShoppingCart className="size-4" strokeWidth={1.75} />
@@ -141,7 +141,7 @@ export function HomeView() {
                 Ventana aparte · misma base de datos
               </span>
             </span>
-            <ArrowUpRight className="size-4 opacity-70 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" strokeWidth={1.75} />
+            <ArrowUpRight className="size-4 opacity-70 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" strokeWidth={1.75} />
           </button>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -171,9 +171,9 @@ export function HomeView() {
                 key={id}
                 type="button"
                 onClick={() => setSection(id)}
-                className="group flex items-center gap-3 rounded-xl border border-border/60 bg-background px-4 py-3 text-left transition-colors hover:border-border hover:bg-muted/35 dark:hover:bg-zinc-900/40"
+                className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left shadow-[var(--shadow-xs)] transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.2,0,0,1)] hover:border-border hover:bg-card hover:shadow-[var(--shadow-sm)] dark:bg-card/40 dark:hover:bg-card/70"
               >
-                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/30 text-foreground/80 transition-colors group-hover:bg-muted/60 dark:bg-zinc-800/50">
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/40 text-foreground/80 transition-colors group-hover:bg-muted/70 dark:bg-muted/30 dark:group-hover:bg-muted/50">
                   <Icon className="size-[17px]" strokeWidth={1.5} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -235,9 +235,9 @@ function QuickAction({ Icon, label, hint, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-muted/35 dark:hover:bg-zinc-900/40"
+      className="group flex items-center gap-2.5 rounded-md border border-border/60 bg-card/50 px-3 py-2.5 text-left shadow-[var(--shadow-xs)] transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.2,0,0,1)] hover:border-border hover:bg-card hover:shadow-[var(--shadow-sm)] dark:bg-card/40 dark:hover:bg-card/70"
     >
-      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/30 text-foreground/75 transition-colors group-hover:bg-muted/60 dark:bg-zinc-800/50">
+      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/40 text-foreground/75 transition-colors group-hover:bg-muted/70 dark:bg-muted/30 dark:group-hover:bg-muted/50">
         <Icon className="size-3.5" strokeWidth={1.6} />
       </span>
       <span className="min-w-0 flex-1">

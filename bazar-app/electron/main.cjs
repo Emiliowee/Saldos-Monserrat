@@ -405,6 +405,7 @@ function registerIpc() {
   ipcMain.handle('db:cuadernoRenameTagGroup', (_, p) => db.cuadernoRenameTagGroup(p))
   ipcMain.handle('db:cuadernoDeleteTagOption', (_, p) => db.cuadernoDeleteTagOption(p))
   ipcMain.handle('db:cuadernoDeleteTagGroup', (_, p) => db.cuadernoDeleteTagGroup(p))
+  ipcMain.handle('db:countProductsByTagOption', (_, p) => db.countProductsByTagOption(p))
   ipcMain.handle('db:listPriceRulesAdmin', () => db.listPriceRulesAdmin())
   ipcMain.handle('db:cuadernoAddTagGroup', (_, p) => db.cuadernoAddTagGroup(p))
   ipcMain.handle('db:cuadernoAddTagOption', (_, p) => db.cuadernoAddTagOption(p))

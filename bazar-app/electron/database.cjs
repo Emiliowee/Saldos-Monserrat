@@ -1220,6 +1220,22 @@ function _deleteTagOptionDeep(database, optionId) {
   database.prepare('DELETE FROM tag_options WHERE id = ?').run(oid)
 }
 
+/** Cuenta cuántos productos (del inventario activo) usan una etiqueta específica. */
+function countProductsByTagOption(optionId) {
+  const database = getDb()
+  const oid = Number(optionId)
+  if (!Number.isFinite(oid) || oid <= 0) return 0
+  const row = database
+    .prepare(
+      `SELECT COUNT(DISTINCT p.id) AS c
+       FROM producto_tags pt
+       JOIN inventario_activo p ON p.id = pt.producto_id
+       WHERE pt.tag_option_id = ?`,
+    )
+    .get(oid)
+  return Number(row?.c) || 0
+}
+
 function cuadernoRenameTagGroup(payload) {
   const database = getDb()
   const id = Number(payload?.id)
@@ -2689,6 +2705,7 @@ module.exports = {
   cuadernoRenameTagGroup,
   cuadernoDeleteTagOption,
   cuadernoDeleteTagGroup,
+  countProductsByTagOption,
   cuadernoSetTagOptionActive,
   cuadernoSetTagGroupStyle,
   cuadernoSetTagOptionStyle,

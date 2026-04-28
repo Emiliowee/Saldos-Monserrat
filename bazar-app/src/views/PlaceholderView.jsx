@@ -6,10 +6,11 @@ import {
   BookOpen,
   MapPin,
   Settings,
-  Flower2,
+  Sparkles,
+  ArrowUpRight,
 } from 'lucide-react'
 import { NAV_MODULES } from '@/theme/nav'
-import { Card, CardContent } from '@/components/ui/card'
+import { useAppStore } from '@/stores/useAppStore'
 
 const ICONS = {
   inicio: Home,
@@ -23,29 +24,53 @@ const ICONS = {
 
 export function PlaceholderView({ section }) {
   const mod = NAV_MODULES.find((m) => m.id === section)
-  const Icon = ICONS[section] || Flower2
+  const Icon = ICONS[section] || Sparkles
+  const setSection = useAppStore((s) => s.setSection)
 
   return (
-    <div className="flex h-full items-center justify-center overflow-auto p-6">
-      <div className="flex max-w-md flex-col items-center gap-6 text-center">
-        <div className="flex size-16 items-center justify-center rounded-2xl bg-primary/12 shadow-inner ring-1 ring-primary/20">
-          <Icon className="size-8 text-primary" strokeWidth={1.4} />
+    <div
+      data-app-workspace
+      className="relative flex h-full items-center justify-center overflow-auto bg-background px-6 py-10"
+    >
+      <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 flex w-full max-w-[460px] flex-col items-start gap-6">
+        <div
+          aria-hidden
+          className="relative inline-flex size-11 items-center justify-center rounded-lg border border-border/70 bg-card text-foreground/70 shadow-[var(--shadow-xs)]"
+        >
+          <Icon className="size-[18px]" strokeWidth={1.5} />
+          <span className="absolute -right-1 -top-1 inline-flex size-2 rounded-full bg-primary/70 ring-2 ring-background" />
         </div>
+
         <div className="space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">Bazar Monserrat</p>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">{mod?.label || section}</h1>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Este módulo está en preparación. La navegación y el diseño ya siguen la identidad de la app.
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/75">
+            Bazar Monserrat · Módulo
+          </p>
+          <h1 className="text-[26px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground">
+            {mod?.label || section}
+          </h1>
+          <p className="max-w-[42ch] text-[13px] leading-relaxed text-muted-foreground/85">
+            Este módulo está en preparación. El resto del workspace ya está operativo —
+            podés seguir trabajando en inventario, PDV o cuaderno.
           </p>
         </div>
-        <Card className="w-full border-primary/15 bg-card/80 shadow-sm backdrop-blur-sm">
-          <CardContent className="flex items-start gap-3 p-4 text-left">
-            <Flower2 className="mt-0.5 size-4 shrink-0 text-primary" strokeWidth={1.5} />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Si necesitás priorizar qué construir aquí (reportes, usuarios, etc.), definilo en el cuaderno de prácticas y lo enlazamos al mismo estilo visual.
-            </p>
-          </CardContent>
-        </Card>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSection('inicio')}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 text-[12.5px] font-medium text-foreground/85 shadow-[var(--shadow-xs)] transition-[background-color,border-color,color] duration-150 hover:border-border hover:bg-muted/40 hover:text-foreground"
+          >
+            Volver al inicio
+          </button>
+          <button
+            type="button"
+            onClick={() => setSection('inventario')}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Ir a inventario
+            <ArrowUpRight className="size-3" strokeWidth={1.75} />
+          </button>
+        </div>
       </div>
     </div>
   )

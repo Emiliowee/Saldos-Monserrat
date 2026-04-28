@@ -210,6 +210,7 @@ declare global {
         cuadernoRenameTagGroup: (payload: { id: number; name: string }) => Promise<{ ok: boolean }>
         cuadernoDeleteTagOption: (payload: { id: number }) => Promise<{ ok: boolean }>
         cuadernoDeleteTagGroup: (payload: { id: number }) => Promise<{ ok: boolean }>
+        countProductsByTagOption: (optionId: number) => Promise<number>
         listPriceRulesAdmin: () => Promise<
           Array<{
             id: number

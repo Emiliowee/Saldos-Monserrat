@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('bazar', {
     cuadernoRenameTagGroup: (payload) => ipcRenderer.invoke('db:cuadernoRenameTagGroup', payload),
     cuadernoDeleteTagOption: (payload) => ipcRenderer.invoke('db:cuadernoDeleteTagOption', payload),
     cuadernoDeleteTagGroup: (payload) => ipcRenderer.invoke('db:cuadernoDeleteTagGroup', payload),
+    countProductsByTagOption: (optionId) => ipcRenderer.invoke('db:countProductsByTagOption', optionId),
     listPriceRulesAdmin: () => ipcRenderer.invoke('db:listPriceRulesAdmin'),
     cuadernoAddTagGroup: (payload) => ipcRenderer.invoke('db:cuadernoAddTagGroup', payload),
     cuadernoAddTagOption: (payload) => ipcRenderer.invoke('db:cuadernoAddTagOption', payload),

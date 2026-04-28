@@ -84,6 +84,10 @@ export function CuadernoView() {
   const treeSearchInputRef = useRef(null)
   const lastLoadedTagKeyRef = useRef('')
 
+  /** Conteo de productos que usan la etiqueta abierta (Notion-style usage). */
+  const [tagUsageCount, setTagUsageCount] = useState(null)
+  const [tagUsageLoading, setTagUsageLoading] = useState(false)
+
   const [treeSearch, setTreeSearch] = useState('')
   const [treeSearchOpen, setTreeSearchOpen] = useState(false)
   const [draggingGroupId, setDraggingGroupId] = useState(null)
@@ -252,6 +256,38 @@ export function CuadernoView() {
       setMainCenter({ screen: 'home' })
     }
   }, [groups, activeTagSheet])
+
+  /** Carga el conteo de uso cuando cambia la etiqueta abierta. */
+  useEffect(() => {
+    if (!activeTagSheet) {
+      setTagUsageCount(null)
+      setTagUsageLoading(false)
+      return
+    }
+    const fn = window.bazar?.db?.countProductsByTagOption
+    if (typeof fn !== 'function') {
+      setTagUsageCount(null)
+      setTagUsageLoading(false)
+      return
+    }
+    let cancelled = false
+    setTagUsageLoading(true)
+    Promise.resolve(fn(activeTagSheet.optionId))
+      .then((n) => {
+        if (cancelled) return
+        setTagUsageCount(Number.isFinite(Number(n)) ? Number(n) : 0)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setTagUsageCount(null)
+      })
+      .finally(() => {
+        if (!cancelled) setTagUsageLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTagSheet])
 
   useEffect(() => {
     registerCuadernoNavGuard(async () => {
@@ -852,19 +888,28 @@ export function CuadernoView() {
                 onNameChange={setOptNameDraft}
                 icon={optIcon}
                 onIconChange={setOptIcon}
+                color={optColor}
+                onColorChange={setOptColor}
                 active={optActive}
                 onActiveChange={setOptActive}
                 groupName={groups.find((g) => g.id === optSheet.groupId)?.name ?? '—'}
                 onGroupClick={() => setGroupSheetId(optSheet.groupId)}
                 siblingRows={(groups.find((g) => g.id === optSheet.groupId)?.options || [])
                   .filter((o) => o.id !== optSheet.optionId)
-                  .map((o) => ({ id: o.id, name: String(o.name || '').trim() }))
+                  .map((o) => ({
+                    id: o.id,
+                    name: String(o.name || '').trim(),
+                    notionColor: normalizeNotionColorKey(o.notion_color, 'default'),
+                  }))
                   .filter((o) => o.name)}
                 onSiblingClick={(optionId) => {
                   openTagSheet(optSheet.groupId, optionId)
                 }}
                 onSave={() => void saveOptionSheet()}
                 isSaving={tagOptionSaving}
+                isDirty={isTagDirty}
+                usageCount={tagUsageCount}
+                usageLoading={tagUsageLoading}
                 onClose={goHomeCenter}
                 onDelete={() => void deleteOption()}
               />
